@@ -4,62 +4,44 @@ import matplotlib.pyplot as plt
 
 ### Import data - COVID-19 cases from COVID dashboard
 ### (Zixuan email)
-### File name = "nation_newCasesBySpecimenDate.csv"
+### File name = nation_newCasesBySpecimenDate.csv
 data = pd.read_csv("/Users/oc25003/Desktop/Data/Cases/nation_newCasesBySpecimenDate.csv")
-
-### Inspect first 5 rows
-print(data.head())
-
-### Create new dataframe with only date and number of new cases
-data = data[['date', 'value']]
-
-### Rename value column to newCasesBySpecimenData
-data = data.rename(columns={'value': 'newCasesBySpecimenDate'})
-
-print(data.head())
-
-### Convert dates to a numeric format
+### Selecting only the date and the number of positive cases from the dataset
+data = data[['date', 'value']].rename(columns={'value': 'newCases'})
+### Convert date column to date time
 data['date'] = pd.to_datetime(data['date'])
 
+### 7 day average of cases
+data['newCases_smooth'] = data['newCases'].rolling(window=7, center=True, min_periods=1).mean()
+
+### Convert date to time variable
 data['t'] = (data['date'] - data['date'].min()).dt.days
+t_min, t_max = data['t'].min(), data['t'].max()
+data['t_norm'] = (data['t'] - t_min) / (t_max - t_min)
 
-### Population of the UK = 69_000_000
+### N = Population of UK
 N = 69_000_000
+### Convert absolute daily new cases into the proportion of the population
+data['I_obs'] = data['newCases_smooth'] / N
 
-data['I_fraction'] = data['newCasesBySpecimenDate'] / N
+### Save data
+### NumPy arrays
+np.save("t_data.npy", data['t_norm'].values.reshape(-1, 1))
+np.save("I_data.npy", data['I_obs'].values.reshape(-1, 1))
 
-print(data.head())
+### Generate collocation points for PINN physics loss
+### (Collocation points constitute the training dataset for PINN)
+n_col = 2000
+t_col = np.random.uniform(0, 1, (n_col, 1))
+np.save("t_col.npy", t_col)
 
-### Select columns for PINN
-t_data = data['t'].values.reshape(-1, 1)          # input = time
-I_data = data['I_fraction'].values.reshape(-1, 1) # output = infected fraction
-
-### Inspect pre-processed data for PINN
-print("Processed data for PINN:")
-print(data.head())
-
-### Save array for PINN
-np.save("t_data.npy", t_data)
-np.save("I_data.npy", I_data)
-
-### Visualising the data
-
-### Plot new daily cases
-plt.figure(figsize=(12, 6))
-plt.plot(data['date'], data['newCasesBySpecimenDate'], color='pink', label='Daily New Cases')
-plt.title('Daily COVID-19 Cases in the UK')
-plt.xlabel('Date')
-plt.ylabel('Number of Cases')
+### Data visualisation
+plt.figure(figsize=(12, 5))
+plt.plot(data['date'], data['I_obs'] * N, label="Observed infected (proxy)", color='pink')
+plt.title("COVID-19: Observed Infected Proxy")
+plt.ylabel("People")
+plt.xlabel("Date")
 plt.grid(True)
 plt.legend()
 plt.show()
 
-### Plot infected fraction of the population
-plt.figure(figsize=(12, 6))
-plt.plot(data['date'], data['I_fraction'], color='pink', label='Fraction of Population Infected')
-plt.title('Daily Infected Fraction of the UK Population')
-plt.xlabel('Date')
-plt.ylabel('Infected Fraction')
-plt.grid(True)
-plt.legend()
-plt.show()
