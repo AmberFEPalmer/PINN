@@ -1,5 +1,1 @@
-# PINN
-# PINN
-# PINN
-# PINN
-# PINN
+# SEIR physics informed neural network
