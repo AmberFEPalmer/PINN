@@ -11,7 +11,7 @@ data = data[['date', 'value']].rename(columns={'value': 'newCases'})
 ### Convert date column to date time
 data['date'] = pd.to_datetime(data['date'])
 
-### 7 day average of cases
+### 7 day average of cases - consistent with Li et al. 2024 Journal of medical bioinformatics
 data['newCases_smooth'] = data['newCases'].rolling(window=7, center=True, min_periods=1).mean()
 
 ### Convert date to time variable
@@ -36,12 +36,27 @@ t_col = np.random.uniform(0, 1, (n_col, 1))
 np.save("t_col.npy", t_col)
 
 ### Data visualisation
+
+### Dates of COVID-19 government restrictions (UK)
+lockdowns = [
+    ("Lockdown 1", "2020-03-23"),
+    ("Lockdown 2", "2020-12-02"),
+    ("Lockdown 3", "2021-01-04")
+]
+
 plt.figure(figsize=(12, 5))
 plt.plot(data['date'], data['I_obs'] * N, label="Observed infected (proxy)", color='pink')
 plt.title("COVID-19: Observed Infected Proxy")
 plt.ylabel("People")
 plt.xlabel("Date")
 plt.grid(True)
+
+for label, date in lockdowns:
+    plt.axvline(pd.to_datetime(date), color='grey', linestyle='--', linewidth=1)
+    plt.text(pd.to_datetime(date), plt.ylim()[1], label,
+             rotation=90, verticalalignment='top', color='grey')
+
 plt.legend()
 plt.show()
+
 
