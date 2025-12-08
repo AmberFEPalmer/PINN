@@ -46,10 +46,10 @@ def create_pinn_model():
     x = Dense(32, activation='tanh')(x)
     
     ### Output layers for S, E, I, R
-    S = Dense(1, name='S')(x)
-    E = Dense(1, name='E')(x)
-    I = Dense(1, name='I')(x)
-    R = Dense(1, name='R')(x)
+    S = Dense(1, activation='sigmoid', name='S')(x)
+    E = Dense(1, activation='sigmoid', name='E')(x)
+    I = Dense(1, activation='sigmoid', name='I')(x)
+    R = Dense(1, activation='sigmoid', name='R')(x)
 
     ### Create the model - inputs = time, outputs = SEIR compartments
     model = Model(inputs=t_input, outputs=[S, E, I, R])
@@ -60,7 +60,13 @@ model = create_pinn_model()
 model.summary()
 
 ### Define physics informed loss
-def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta, sigma, gamma):
+def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gamma_raw):
+
+### Apply softplus to ensure positive parameters
+    beta = tf.nn.softplus(beta_raw)
+    sigma = tf.nn.softplus(sigma_raw)
+    gamma = tf.nn.softplus(gamma_raw)
+
     ### Convert inputs to TensorFlow tensors 
     t_col = tf.convert_to_tensor(t_col, dtype=tf.float32)
 
@@ -137,17 +143,17 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta, sigma, gamma):
     return total_loss
 
 ### Define parameters 
-beta = tf.Variable(0.8, dtype=tf.float32, name='beta')
-sigma = tf.Variable(0.2, dtype=tf.float32, name='sigma')
-gamma = tf.Variable(0.1, dtype=tf.float32, name='gamma')
+beta_raw = tf.Variable(0.8, dtype=tf.float32, name='beta_raw')
+sigma_raw = tf.Variable(0.5, dtype=tf.float32, name='sigma_raw')
+gamma_raw = tf.Variable(0.3, dtype=tf.float32, name='gamma_raw')
 
 ### Optimizer
 optm = Adam(learning_rate=0.01) ### Adam = one of the most common optimisers
 
 ### Get trainable variables
-if isinstance(beta, tf.Variable):
+if isinstance(beta_raw, tf.Variable):
     ### If parameters are trainable, include them
-    trainable_vars = model.trainable_variables + [beta, sigma, gamma]
+    trainable_vars = model.trainable_variables + [beta_raw, sigma_raw, gamma_raw]
 else:
     ### If parameters are fixed, only train network weights
     trainable_vars = model.trainable_variables
@@ -163,7 +169,7 @@ train_loss_record = []
 print("Starting training...")
 for itr in range(10000):
     with tf.GradientTape() as tape:
-        train_loss = seir_ode_loss(train_t, t_data, I_data, model, beta, sigma, gamma)
+        train_loss = seir_ode_loss(train_t, t_data, I_data, model, beta_raw, sigma_raw, gamma_raw)
     
     train_loss_record.append(train_loss.numpy())
     
@@ -172,8 +178,22 @@ for itr in range(10000):
     
     if itr % 1000 == 0:
         print(f"Iteration {itr}, Loss: {train_loss.numpy():.6f}")
-        if isinstance(beta, tf.Variable):
+        if isinstance(beta_raw, tf.Variable):
             print("Training complete!")
+
+print("\nTraining complete!")
+print(f"\nFinal learned parameters:")
+beta_final = tf.nn.softplus(beta_raw).numpy()
+sigma_final = tf.nn.softplus(sigma_raw).numpy()
+gamma_final = tf.nn.softplus(gamma_raw).numpy()
+print(f"β (transmission rate) = {beta_final:.4f}")
+print(f"σ (incubation rate) = {sigma_final:.4f}")
+print(f"γ (recovery rate) = {gamma_final:.4f}")
+print(f"R0 (basic reproduction number) = {(beta_final/gamma_final):.4f}")
+
+### Save model
+model.save('seir_pinn_model.keras')
+print("\nModel saved as 'seir_pinn_model.keras'")
 
 ### Plot training loss
 plt.figure(figsize=(10, 8))
