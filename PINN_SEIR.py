@@ -17,6 +17,9 @@ from tensorflow.keras.optimizers import Adam
 ### Time varying parameters
 ### evaluate model on different time frames
 
+### https://www.tensorflow.org/tutorials/customization/basics
+### https://www.tensorflow.org/api_docs/python/tf/convert_to_tensor 
+
 ### Load preprocessed data (from COVID_Data.py script)
 ### These data are arrays
 t_data = np.load("t_data.npy")       ### time points 
@@ -35,7 +38,8 @@ def create_pinn_model():
     t_input = Input(shape=(1,), name='time_input')
     
     ### Hidden layer 1 = 32 neurons, tanh activation
-    ### Tanh activation is a good choice for this model because it is non-linear
+    ### Tanh activation is a good choice for this model because it is non-linear and smooth
+    ### tanh outputs values in [-1,1]
     x = Dense(32, activation='tanh')(t_input)
     
     ### Hidden layers 2 + 3 = 64 neurons, tanh activation  
@@ -46,6 +50,7 @@ def create_pinn_model():
     x = Dense(32, activation='tanh')(x)
     
     ### Output layers for S, E, I, R
+    ### sigmoid outputs variables in [-1, 1]
     S = Dense(1, activation='sigmoid', name='S')(x)
     E = Dense(1, activation='sigmoid', name='E')(x)
     I = Dense(1, activation='sigmoid', name='I')(x)
@@ -63,6 +68,7 @@ model.summary()
 def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gamma_raw):
 
 ### Apply softplus to ensure positive parameters
+### https://www.tensorflow.org/api_docs/python/tf/math/softplus
     beta = tf.nn.softplus(beta_raw)
     sigma = tf.nn.softplus(sigma_raw)
     gamma = tf.nn.softplus(gamma_raw)
@@ -71,6 +77,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
     t_col = tf.convert_to_tensor(t_col, dtype=tf.float32)
 
     ### if t_col is a 1D array it is reshaped to a column vector
+    ### https://www.tensorflow.org/api_docs/python/tf/reshape
     if len(t_col.shape) == 1:
         t_col = tf.reshape(t_col, (-1, 1))
     
@@ -86,12 +93,13 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
     
     ### Estimate starting values for the SEIR equations based on the first infection value
     I0_val = float(I_data_loss[0])   
-    E0_val = 3.0 * I0_val 
+    E0_val = 3.0 * I0_val ### (3x the number of infected individuals)
     R0_val = 0.0 ### no individuals start recovered
     S0_val = 1.0 - I0_val - E0_val - R0_val 
     S0_val = max(S0_val, 0.0)
 
     ### Convert to tensors 
+    ### https://www.tensorflow.org/api_docs/python/tf/constant
     S0 = tf.constant([[S0_val]], dtype=tf.float32)
     E0 = tf.constant([[E0_val]], dtype=tf.float32)
     I0 = tf.constant([[I0_val]], dtype=tf.float32)
@@ -100,6 +108,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
     N = 1.0  ### total population in scaled units
     
     ### Physics loss at collocation points
+    ### https://www.tensorflow.org/api_docs/python/tf/GradientTape
     with tf.GradientTape(persistent=True) as tape:
         tape.watch(t_col)
         S, E, I, R = net(t_col)
@@ -118,6 +127,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
     dR_dt_true = gamma * I
     
     ### Physics-informed loss - mean squared error
+    ### https://www.tensorflow.org/api_docs/python/tf/math/reduce_mean
     physics_loss = tf.reduce_mean(
         tf.square(dS_dt - dS_dt_true) +
         tf.square(dE_dt - dE_dt_true) +
@@ -161,7 +171,7 @@ else:
 ### Collocation points for physics loss
 ### Collocation points cover the time of the model
 ### 100 points where the physics loss is evaluated in the model
-train_t = np.linspace(0, 1, 200).reshape(-1, 1)
+trainable_vars = model.trainable_variables + [beta_raw, sigma_raw, gamma_raw]
 
 ### Training loop
 train_loss_record = []
@@ -169,7 +179,7 @@ train_loss_record = []
 print("Starting training...")
 for itr in range(10000):
     with tf.GradientTape() as tape:
-        train_loss = seir_ode_loss(train_t, t_data, I_data, model, beta_raw, sigma_raw, gamma_raw)
+        train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, beta_raw, sigma_raw, gamma_raw)
     
     train_loss_record.append(train_loss.numpy())
     
