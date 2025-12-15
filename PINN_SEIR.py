@@ -22,19 +22,22 @@ from tensorflow.keras.optimizers import Adam
 
 ### Load preprocessed data (from COVID_Data.py script)
 ### These data are arrays
-t_data = np.load("t_data_2021-11.npy")       ### time points 
-I_data = np.load("I_data_2021-11.npy")       ### observed infections
-t_col  = np.load("t_col_2021-11.npy")        ### collocation points for physics loss
+t_data = np.load("t_data_2020.npy")       ### time points 
+I_data = np.load("I_data_2020.npy")       ### observed infections
+t_col  = np.load("t_col.npy")        ### collocation points for physics loss
+
+### Store the max time for scaling
+t_max = t_data.max()
 
 ### Convert to TensorFlow tensors (so they can be used for model training)
 ### tensor = multi-dimensional list of numbers
 t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
 I_tensor = tf.convert_to_tensor(I_data, dtype=tf.float32)
-t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
-if len(t_col_tensor.shape) == 1:
-    t_col_tensor = tf.reshape(t_col_tensor, (-1,1))
 
-t_col_tensor = t_col_tensor / t_data.max()
+# Create collocation points across full range
+# t_data is already normalized to [0,1] when saved in t_data_2020.npy
+t_col = np.linspace(0, 1, 500).reshape(-1, 1)  # 500 collocation points across [0,1]
+t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
 
 ### Define PINN
 def create_pinn_model():
@@ -70,7 +73,18 @@ model.summary()
 
 ### Define physics informed loss
 def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gamma_raw):
-
+    """
+    Calculate physics informed loss
+    
+    :param t_col: Collocation points (normalised)
+    :param t_data_loss: time points for data
+    :param I_data_loss: Infection data
+    :param net: Neural network model
+    :param beta_raw: Trainable parameter
+    :param sigma_raw: Trainable parameter
+    :param gamma_raw: Trainable parameter
+    :t_max: maximum time value for scaling
+    """
 ### Apply softplus to ensure positive parameters
 ### https://www.tensorflow.org/api_docs/python/tf/math/softplus
     beta = tf.nn.softplus(beta_raw)
@@ -82,6 +96,12 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
     if len(t_col.shape) == 1:
         t_col = tf.reshape(t_col, (-1, 1))
     
+    ### Convert data to tensors 
+    if not isinstance(t_data_loss, tf.Tensor):
+        t_data_loss = tf.convert_to_tensor(t_data_loss, dtype=tf.float32)
+    if not isinstance(I_data_loss, tf.Tensor):
+        I_data_loss = tf.convert_to_tensor(I_data_loss, dtype=tf.float32)
+
     ### if t_data_loss is a 1D array it is reshaped to a column vector
     if len(t_data_loss.shape) == 1:
         t_data_loss = tf.reshape(t_data_loss, (-1, 1))
@@ -113,12 +133,14 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
         S, E, I, R = net(t_col)
         
     ### Compute derivatives e.g. dS/dt
-    dS_dt = tape.gradient(S, t_col)
-    dE_dt = tape.gradient(E, t_col)
-    dI_dt = tape.gradient(I, t_col)
-    dR_dt = tape.gradient(R, t_col)
-    del tape  
-    
+    ### Scale derivatives because time is normalised
+    scale_factor = t_data.max()
+    dS_dt = tape.gradient(S, t_col) * scale_factor
+    dE_dt = tape.gradient(E, t_col) * scale_factor
+    dI_dt = tape.gradient(I, t_col) * scale_factor
+    dR_dt = tape.gradient(R, t_col) * scale_factor
+    del tape
+
     ### SEIR equations
     dS_dt_true = -beta * S * I / N
     dE_dt_true = beta * S * I / N - sigma * E
@@ -133,9 +155,9 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
         tf.square(dI_dt - dI_dt_true) +
         tf.square(dR_dt - dR_dt_true)
     )
-    
+
     ### Initial condition loss (evaluate at t=0)
-    t_zero = tf.constant([[0.0]], dtype=tf.float32) / t_data.max()
+    t_zero = tf.constant([[0.0]], dtype=tf.float32) 
     S_0, E_0, I_0, R_0 = net(t_zero)
     
     IC_loss = (tf.square(S_0 - S0) + tf.square(E_0 - E0) + 
@@ -143,8 +165,8 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
     IC_loss = tf.reduce_sum(IC_loss)
     
     ### Data loss 
-    t_data_tensor = t_data / t_data.max()
-    S_pred, E_pred, I_pred, R_pred = net(t_data_tensor)  # Unpack all outputs
+    t_data_normalized = t_data_loss / t_max
+    _, _, I_pred, _ = net(t_data_normalized)
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
@@ -160,14 +182,6 @@ gamma_raw = tf.Variable(0.3, dtype=tf.float32, name='gamma_raw')
 ### Optimizer
 optm = Adam(learning_rate=0.01) ### Adam = one of the most common optimisers
 
-### Get trainable variables
-if isinstance(beta_raw, tf.Variable):
-    ### If parameters are trainable, include them
-    trainable_vars = model.trainable_variables + [beta_raw, sigma_raw, gamma_raw]
-else:
-    ### If parameters are fixed, only train network weights
-    trainable_vars = model.trainable_variables
-
 ### Collocation points for physics loss
 ### Collocation points cover the time of the model
 ### 100 points where the physics loss is evaluated in the model
@@ -179,8 +193,6 @@ train_loss_record = []
 print("Starting training...")
 for itr in range(10000):
     with tf.GradientTape() as tape:
-        t_data_tensor = t_tensor / t_data.max()
-        I_data_tensor = I_tensor
         train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, beta_raw, sigma_raw, gamma_raw)
     
     train_loss_record.append(train_loss.numpy())
@@ -190,8 +202,10 @@ for itr in range(10000):
     
     if itr % 1000 == 0:
         print(f"Iteration {itr}, Loss: {train_loss.numpy():.6f}")
-        if isinstance(beta_raw, tf.Variable):
-            print("Training complete!")
+        beta_current = tf.nn.softplus(beta_raw).numpy()
+        sigma_current = tf.nn.softplus(sigma_raw).numpy()
+        gamma_current = tf.nn.softplus(gamma_raw).numpy()
+        print(f"  β={beta_current:.4f}, σ={sigma_current:.4f}, γ={gamma_current:.4f}")
 
 print("\nTraining complete!")
 print(f"\nFinal learned parameters:")
