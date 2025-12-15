@@ -63,8 +63,11 @@ def create_pinn_model():
     I = Dense(1, activation='sigmoid', name='I')(x)
     R = Dense(1, activation='sigmoid', name='R')(x)
 
+    # Time-varying beta (must be positive)
+    beta = Dense(1, activation='softplus', name='beta')(x)  
+
     ### Create the model - inputs = time, outputs = SEIR compartments
-    model = Model(inputs=t_input, outputs=[S, E, I, R])
+    model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
     return model
 
 model = create_pinn_model()
@@ -72,7 +75,7 @@ model = create_pinn_model()
 model.summary()
 
 ### Define physics informed loss
-def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gamma_raw):
+def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     """
     Calculate physics informed loss
     
@@ -87,7 +90,6 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
     """
 ### Apply softplus to ensure positive parameters
 ### https://www.tensorflow.org/api_docs/python/tf/math/softplus
-    beta = tf.nn.softplus(beta_raw)
     sigma = tf.nn.softplus(sigma_raw)
     gamma = tf.nn.softplus(gamma_raw)
 
@@ -130,15 +132,15 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
     ### https://www.tensorflow.org/api_docs/python/tf/GradientTape
     with tf.GradientTape(persistent=True) as tape:
         tape.watch(t_col)
-        S, E, I, R = net(t_col)
+        S, E, I, R, beta = model(t_col)
         
     ### Compute derivatives e.g. dS/dt
     ### Scale derivatives because time is normalised
     scale_factor = t_data.max()
-    dS_dt = tape.gradient(S, t_col) * scale_factor
-    dE_dt = tape.gradient(E, t_col) * scale_factor
-    dI_dt = tape.gradient(I, t_col) * scale_factor
-    dR_dt = tape.gradient(R, t_col) * scale_factor
+    dS_dt = tape.gradient(S, t_col) 
+    dE_dt = tape.gradient(E, t_col)
+    dI_dt = tape.gradient(I, t_col) 
+    dR_dt = tape.gradient(R, t_col) 
     del tape
 
     ### SEIR equations
@@ -158,7 +160,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
 
     ### Initial condition loss (evaluate at t=0)
     t_zero = tf.constant([[0.0]], dtype=tf.float32) 
-    S_0, E_0, I_0, R_0 = net(t_zero)
+    S_0, E_0, I_0, R_0, _ = net(t_zero)
     
     IC_loss = (tf.square(S_0 - S0) + tf.square(E_0 - E0) + 
                tf.square(I_0 - I0) + tf.square(R_0 - R0))
@@ -166,16 +168,15 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, beta_raw, sigma_raw, gam
     
     ### Data loss 
     t_data_normalized = t_data_loss / t_max
-    _, _, I_pred, _ = net(t_data_normalized)
+    _, _, I_pred, _, _ = net(t_data_normalized)
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0*physics_loss + 1.0*IC_loss + 10.0*data_loss
+    total_loss = 1.0*physics_loss + 1.0*IC_loss + 1000.0*data_loss
     
     return total_loss
 
 ### Define parameters 
-beta_raw = tf.Variable(0.8, dtype=tf.float32, name='beta_raw')
 sigma_raw = tf.Variable(0.5, dtype=tf.float32, name='sigma_raw')
 gamma_raw = tf.Variable(0.3, dtype=tf.float32, name='gamma_raw')
 
@@ -185,7 +186,7 @@ optm = Adam(learning_rate=0.01) ### Adam = one of the most common optimisers
 ### Collocation points for physics loss
 ### Collocation points cover the time of the model
 ### 100 points where the physics loss is evaluated in the model
-trainable_vars = model.trainable_variables + [beta_raw, sigma_raw, gamma_raw]
+trainable_vars = model.trainable_variables + [sigma_raw, gamma_raw]
 
 ### Training loop
 train_loss_record = []
@@ -193,7 +194,7 @@ train_loss_record = []
 print("Starting training...")
 for itr in range(10000):
     with tf.GradientTape() as tape:
-        train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, beta_raw, sigma_raw, gamma_raw)
+        train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, sigma_raw, gamma_raw)
     
     train_loss_record.append(train_loss.numpy())
     
@@ -202,20 +203,16 @@ for itr in range(10000):
     
     if itr % 1000 == 0:
         print(f"Iteration {itr}, Loss: {train_loss.numpy():.6f}")
-        beta_current = tf.nn.softplus(beta_raw).numpy()
         sigma_current = tf.nn.softplus(sigma_raw).numpy()
         gamma_current = tf.nn.softplus(gamma_raw).numpy()
-        print(f"  β={beta_current:.4f}, σ={sigma_current:.4f}, γ={gamma_current:.4f}")
+        print(f"σ={sigma_current:.4f}, γ={gamma_current:.4f}")
 
 print("\nTraining complete!")
 print(f"\nFinal learned parameters:")
-beta_final = tf.nn.softplus(beta_raw).numpy()
 sigma_final = tf.nn.softplus(sigma_raw).numpy()
 gamma_final = tf.nn.softplus(gamma_raw).numpy()
-print(f"β (transmission rate) = {beta_final:.4f}")
 print(f"σ (incubation rate) = {sigma_final:.4f}")
 print(f"γ (recovery rate) = {gamma_final:.4f}")
-print(f"R0 (basic reproduction number) = {(beta_final/gamma_final):.4f}")
 
 ### Save model
 model.save('seir_pinn_model.keras')
@@ -233,7 +230,7 @@ plt.show()
 
 ### Visualize SEIR predictions
 t_test = np.linspace(0, 1, 200).reshape(-1, 1)  # Test points over full time range
-S_pred, E_pred, I_pred, R_pred = model.predict(t_test)
+S_pred, E_pred, I_pred, R_pred, beta_pred = model.predict(t_test)
 
 plt.figure(figsize=(12, 5))
 
