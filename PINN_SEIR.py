@@ -63,7 +63,8 @@ def create_pinn_model():
     I = Dense(1, activation='sigmoid', name='I')(x)
     R = Dense(1, activation='sigmoid', name='R')(x)
 
-    # Time-varying beta (must be positive)
+    ### Time-varying beta (must be positive)
+    ### Following what was done in Qian et al. 2025 paper
     beta = Dense(1, activation='softplus', name='beta')(x)  
 
     ### Create the model - inputs = time, outputs = SEIR compartments
@@ -229,14 +230,14 @@ plt.grid(True)
 plt.show()
 
 ### Visualize SEIR predictions
-t_test = np.linspace(0, 1, 200).reshape(-1, 1)  # Test points over full time range
+t_test = t_data.reshape(-1, 1) / t_max  # Normalize to [0,1] as in training
 S_pred, E_pred, I_pred, R_pred, beta_pred = model.predict(t_test)
 
 plt.figure(figsize=(12, 5))
 
 # Plot infected compartment vs data
 plt.plot(t_test, I_pred, 'b-', label='I (predicted)', linewidth=2)
-plt.scatter(t_data, I_data, color='red', label='I (observed)', s=50, zorder=5)
+plt.plot(t_data, I_data, color='red', label='I (observed)', linewidth=2)
 plt.xlabel('Normalized Time')
 plt.ylabel('Infected (normalized)')
 plt.title('Infected Compartment vs Observed Data')
@@ -245,3 +246,20 @@ plt.grid(True)
 
 plt.tight_layout()
 plt.show()
+
+### Model evaluation - mean absolute error
+### https://www.tensorflow.org/api_docs/python/tf/keras/losses/MeanAbsoluteError
+mae = tf.keras.losses.MeanAbsoluteError()
+mae_value = mae(I_data, I_pred).numpy()
+print("Mean Absolute Error:", mae_value)
+
+### Model evaluation - mean sqaured error
+### https://www.tensorflow.org/api_docs/python/tf/keras/losses/MeanSquaredError
+mse = tf.keras.losses.MeanSquaredError()
+mse_value = mse(I_data, I_pred).numpy()
+print("Mean Squared Error:", mse_value)
+
+### Model evaluation - mean absolute percentage error
+mape = tf.keras.losses.MeanAbsolutePercentageError()
+mape_value = mae(I_data, I_pred).numpy()
+print("Mean Absolute Percentage Error:", mape_value)
