@@ -22,9 +22,10 @@ from tensorflow.keras.optimizers import Adam
 
 ### Load preprocessed data (from COVID_Data.py script)
 ### These data are arrays
-t_data = np.load("t_data_2020.npy")       ### time points 
-I_data = np.load("I_data_2020.npy")       ### observed infections
-t_col  = np.load("t_col.npy")        ### collocation points for physics loss
+
+t_data = np.load("data/t_data_2020.npy")       ### time points 
+I_data = np.load("data/I_data_2020.npy")       ### observed infections
+t_col  = np.load("data/t_col.npy")        ### collocation points for physics loss
 
 ### Store the max time for scaling
 t_max = t_data.max()
