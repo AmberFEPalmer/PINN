@@ -15,7 +15,7 @@ data = data[data['area_name'] == 'England']
 ### Selecting only the date and the number of positive cases from the dataset
 data = data[['date', 'value']].rename(columns={'value': 'newCases'})
 ### Convert date column to date time format
-data['date'] = pd.to_datetime(data['date'])
+data['date'] = pd.to_datetime(data['date']) ## YYYY/MM/DD
 
 ### See when the data starts and ends
 print("Start date:", data['date'].min())
@@ -72,4 +72,4 @@ plt.title("COVID-19: Estimated I(t) for SEIR PINN")
 plt.ylabel("People")
 plt.grid(True)
 plt.legend()
-plt.show()
+plt.savefig("covid_by_years.png")
