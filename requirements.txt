@@ -1,0 +1,10 @@
+numpy
+matplotlib
+tensorflow=2.20
+
+
+
+##### python -m pip install -r requirements.txt - this will install all the packages that you have listed in the requirements file
+##### python -m pip freeze --all - this will list all of the currently active python packages in your env
+##### don't run with comments, might be worth making a note somewhere else :)
+## you want this for production/finishing touches, but it's an easy way to manage your packages regardless, also worth making a note in your readme of python version, as certain versions are compatiable with certain packages.

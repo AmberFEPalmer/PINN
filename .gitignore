@@ -1,0 +1,7 @@
+*.pyc
+__pycache__/
+*.csv
+*.npy
+beta_net.keras
+seir_all_compartments.png
+state_net.keras
