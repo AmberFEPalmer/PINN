@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 ### Import data - COVID-19 cases from COVID dashboard
 ### (Zixuan email)
 ### File name = nation_newCasesBySpecimenDate.csv
-data = pd.read_csv("/Users/oc25003/Desktop/Data/Cases/nation_newCasesBySpecimenDate.csv")
+data = pd.read_csv("Data/Cases/nation_newCasesBySpecimenDate.csv")
 
 ### Filter for England only
 print(data.columns)
