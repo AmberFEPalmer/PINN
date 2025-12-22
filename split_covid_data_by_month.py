@@ -9,7 +9,7 @@ data = pd.read_csv("/Users/oc25003/Desktop/Data/Cases/nation_newCasesBySpecimenD
 ### Selecting only the date and the number of positive cases from the dataset
 data = data[['date', 'value']].rename(columns={'value': 'newCases'})
 ### Convert date column to date time format
-data['date'] = pd.to_datetime(data['date'])
+data['date'] = pd.to_datetime(data['date']) ##YYYY/MM/DD
 
 ### See when the data starts and ends
 print("Start date:", data['date'].min())
@@ -66,10 +66,8 @@ for ym, df in months.items():
     # Collocation points span [0, 1]
     t_col = np.random.uniform(0, 1, (2000, 1))
     np.save(f"t_col_{ym_str}.npy", t_col)
-    
-    # Print diagnostics for this month
-    print(f"{ym_str}: t_norm=[{t_array.min():.4f}, {t_array.max():.4f}], I_obs=[{I_array.min():.6f}, {I_array.max():.6f}], n={len(t_array)}")
 
+    
 ### Visualization - use original dataset's normalization for display
 data['t'] = (data['date'] - data['date'].min()).dt.days
 data['t_norm'] = (data['t'] - data['t'].min()) / (data['t'].max() - data['t'].min())
@@ -84,21 +82,3 @@ plt.grid(True)
 plt.legend()
 plt.tight_layout()
 plt.show()
-
-### Show one example month
-example_month = '2020-03'
-if example_month in [str(ym) for ym in months.keys()]:
-    t_example = np.load(f"t_data_{example_month}.npy")
-    I_example = np.load(f"I_data_{example_month}.npy")
-    t_col_example = np.load(f"t_col_{example_month}.npy")
-    
-    plt.figure(figsize=(12, 5))
-    plt.scatter(t_example, I_example, label=f'I_obs ({example_month})', color='blue', s=50, zorder=5)
-    plt.scatter(t_col_example, np.zeros_like(t_col_example), color='red', alpha=0.1, s=1, label='Collocation points')
-    plt.xlabel('Normalized Time [0, 1]')
-    plt.ylabel('I_obs (fraction)')
-    plt.title(f'Example Month: {example_month}')
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
