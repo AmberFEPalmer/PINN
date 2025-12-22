@@ -3,7 +3,7 @@ __pycache__/
 *.csv
 *.npy
 beta_net.keras
+*.png
 seir_all_compartments.png
 state_net.keras
 *.DS_Store
-*.png
