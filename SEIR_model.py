@@ -13,7 +13,7 @@ E0 = 0
 I0 = 1000 
 R0 = 0
 S0 = N - I0 - R0 - E0 
-days = 337
+days = 365
 
 ### Parameters
 sigma = 1/5.2
@@ -64,8 +64,8 @@ plt.ylabel("Number of people in each compartment")
 plt.show()
 
 ### Import the COVID-19 data
-t_data = np.load("t_data_raw_2020.npy")       ### time points 
-I_data = np.load("I_data_raw_2020.npy") 
+t_data = np.load("t_data_raw_2021.npy")       ### time points 
+I_data = np.load("I_data_raw_2021.npy") 
 
 plt.figure()
 plt.plot(t_data, I_data)

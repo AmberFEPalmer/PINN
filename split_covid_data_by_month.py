@@ -51,6 +51,18 @@ data['I_obs'] = data['I_prev'] / N
 months = {ym: df for ym, df in data.groupby(data['date'].dt.to_period('M'))}
 print(f"\nCreated {len(months)} monthly datasets.")
 
+
+# Save each year separately with no normalisation to use in SEIR model
+for ym, df in months.items():
+    ym_str = str(ym)
+
+    # Raw time values for this year
+    t_year = df['t'].values
+    I_year = df['I_obs'].values
+
+    np.save(f"t_data_raw_{ym_str}.npy", t_year)
+    np.save(f"I_data_raw_{ym_str}.npy", I_year)
+
 ### Process and save each month
 for ym, df in months.items():
     ym_str = str(ym)
