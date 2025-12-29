@@ -7,3 +7,14 @@ beta_net.keras
 seir_all_compartments.png
 state_net.keras
 *.DS_Store
+COVID_Data.py
+COVID_Data_all_times.py
+PINN.py
+PINN_example_first_order.py
+covid_all_time.png
+covid_by_years.png
+data.png
+pinn_model.h5
+second_wave_data.py
+seir_pinn_model.keras
+test.py
