@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 ### (Zixuan email)
 ### File name = nation_newCasesBySpecimenDate.csv
 data = pd.read_csv("/Users/oc25003/Desktop/Data/Cases/nation_newCasesBySpecimenDate.csv")
+
+### Filter for England only
+print(data.columns)
+print(data.head())
+data = data[data['area_name'] == 'England']
+
 ### Selecting only the date and the number of positive cases from the dataset
 data = data[['date', 'value']].rename(columns={'value': 'newCases'})
 ### Convert date column to date time format
