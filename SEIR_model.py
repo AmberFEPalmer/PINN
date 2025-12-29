@@ -3,14 +3,17 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import pandas as pd
 
+### https://adventuresinpython.blogspot.com/2012/08/fitting-differential-equation-system-to.html
+
 ### Population of England
-N = 56_000_000
+N = 56000000
 
 ### Initial conditions
 E0 = 0 
-I0 = 100
+I0 = 5600000 ### 10% of the population infected at the start of the simulation
 R0 = 0
 S0 = N - I0 - R0 - E0 
+days = 160
 
 ### Parameters
 sigma = 1/5.2
@@ -26,8 +29,7 @@ def ode_model(t, y, N, beta, sigma, gamma):
     dRdt = gamma * I
     return [dSdt, dEdt, dIdt, dRdt]
 
-def ode_solver(t, initial_conditions, parameters):
-    S0, E0, I0, R0 = initial_conditions
+def ode_solver(t, initial_conditions, parameters, N):
     beta, sigma, gamma = parameters
 
     sol = solve_ivp(
@@ -39,27 +41,24 @@ def ode_solver(t, initial_conditions, parameters):
     )
     return sol
 
+### Run the model
 def run_seir(days, S0, E0, I0, R0, beta, sigma, gamma):
-    tspan = np.arange(0, days, 1)
-    sol = ode_solver(tspan, [S0, E0, I0, R0], [beta, sigma, gamma])
+    tspan = np.arange(0, days)
+    sol = ode_solver(tspan, [S0, E0, I0, R0], [beta, sigma, gamma], N)
+    
     S, E, I, R = sol.y
-    return tspan, I  # return I(t)
+    return tspan, S, E, I, R  
 
-### Load real data
-data = pd.read_csv("covid_england_2020.csv")
+t, S, E, I, R = run_seir(days, S0, E0, I0, R0, beta, sigma, gamma)
 
-### See when the data starts and ends
-print("Start date:", data['date'].min())
-print("End date:", data['date'].max())
-
-### Plot
-plt.figure(figsize=(12,6))
-plt.plot(t_model, I_model, label="Model: Active Infections I(t)", linewidth=2)
-plt.scatter(t_data, I_data_new_cases, s=10, color='red',
-            label="Observed: Daily New Cases")
-plt.xlabel("Days since first observation")
-plt.ylabel("Count")
-plt.title("OPTION A: SEIR I(t) vs Observed Daily New Cases (England)")
-plt.legend()
-plt.grid(True)
+### Plot results from SEIR model
+plt.figure(figsize=(10, 6))
+plt.plot(t, S)
+plt.plot(t, E)
+plt.plot(t, I)
+plt.plot(t, R)
+plt.legend(["S", "E", "I", "R"])
+plt.title("SEIR model")
+plt.xlabel("Days")
+plt.ylabel("Number of people in each compartment")
 plt.show()
