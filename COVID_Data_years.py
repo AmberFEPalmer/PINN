@@ -48,6 +48,17 @@ data['t'] = (data['date'] - data['date'].min()).dt.days
 years ={y: df for y, df in data.groupby(data['date'].dt.year)}
 print(f"Created {len(years)} yearly datasets.")
 
+# Save each year separately with no normalisation to use in SEIR model
+for y, df in years.items():
+    y_str = str(y)
+
+    # Raw time values for this year
+    t_year = df['t'].values
+    I_year = df['I_obs'].values
+
+    np.save(f"t_data_raw_{y_str}.npy", t_year)
+    np.save(f"I_data_raw_{y_str}.npy", I_year)
+
 ### Save each year separately for PINN as arrays 
 for y, df in years.items():
     y_str = str(y)

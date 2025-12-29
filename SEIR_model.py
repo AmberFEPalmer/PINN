@@ -10,10 +10,10 @@ N = 56000000
 
 ### Initial conditions
 E0 = 0 
-I0 = 5600000 ### 10% of the population infected at the start of the simulation
+I0 = 1000 
 R0 = 0
 S0 = N - I0 - R0 - E0 
-days = 160
+days = 337
 
 ### Parameters
 sigma = 1/5.2
@@ -59,6 +59,27 @@ plt.plot(t, I)
 plt.plot(t, R)
 plt.legend(["S", "E", "I", "R"])
 plt.title("SEIR model")
+plt.xlabel("Days")
+plt.ylabel("Number of people in each compartment")
+plt.show()
+
+### Import the COVID-19 data
+t_data = np.load("t_data_raw_2020.npy")       ### time points 
+I_data = np.load("I_data_raw_2020.npy") 
+
+plt.figure()
+plt.plot(t_data, I_data)
+plt.show()
+
+### Plot results from SEIR model with the data
+plt.figure(figsize=(10, 6))
+plt.plot(t, S)
+plt.plot(t, E)
+plt.plot(t, I)
+plt.plot(t, R)
+plt.plot(t, t_data)
+plt.legend(["S", "E", "I", "R", "data"])
+plt.title("SEIR model with data")
 plt.xlabel("Days")
 plt.ylabel("Number of people in each compartment")
 plt.show()
