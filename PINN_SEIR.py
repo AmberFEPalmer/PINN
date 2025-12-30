@@ -14,8 +14,11 @@ from tensorflow.keras.optimizers import Adam
 ### code from seminal paper https://github.com/maziarraissi/PINNs
 
 ### TODO test-train split data
-### Time varying parameters
-### evaluate model on different time frames
+### TODO PDEs
+### TODO look at what spatial elements could be incorporated
+### TODO look at handling noisy data
+### TODO compare to other methods e.g. traditional time series, LSTM, neural networks etc
+### TODO R implementation
 
 ### https://www.tensorflow.org/tutorials/customization/basics
 ### https://www.tensorflow.org/api_docs/python/tf/convert_to_tensor 
