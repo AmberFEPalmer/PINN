@@ -5,14 +5,11 @@ import pandas as pd
 
 ### https://adventuresinpython.blogspot.com/2012/08/fitting-differential-equation-system-to.html
 
-### Population of England
-N = 56000000
-
 ### Initial conditions
 E0 = 0 
 I0 = 1000 
 R0 = 0
-S0 = N - I0 - R0 - E0 
+S0 = I0 - R0 - E0 
 days = 31
 
 ### Parameters
@@ -21,22 +18,22 @@ gamma = 0.3
 beta = 0.4
 
 ### SEIR equations
-def ode_model(t, y, N, beta, sigma, gamma):
+def ode_model(t, y, beta, sigma, gamma):
     S, E, I, R = y
-    dSdt = -beta * S * I / N
-    dEdt = beta * S * I / N - sigma * E
+    dSdt = -beta * S * I 
+    dEdt = beta * S * I - sigma * E
     dIdt = sigma * E - gamma * I
     dRdt = gamma * I
     return [dSdt, dEdt, dIdt, dRdt]
 
-def ode_solver(t, initial_conditions, parameters, N):
+def ode_solver(t, initial_conditions, parameters):
     beta, sigma, gamma = parameters
 
     sol = solve_ivp(
         ode_model,
         (t[0], t[-1]),
         [S0, E0, I0, R0],
-        args=(N, beta, sigma, gamma),
+        args=(beta, sigma, gamma),
         t_eval=t
     )
     return sol
@@ -44,7 +41,7 @@ def ode_solver(t, initial_conditions, parameters, N):
 ### Run the model
 def run_seir(days, S0, E0, I0, R0, beta, sigma, gamma):
     tspan = np.arange(0, days)
-    sol = ode_solver(tspan, [S0, E0, I0, R0], [beta, sigma, gamma], N)
+    sol = ode_solver(tspan, [S0, E0, I0, R0], [beta, sigma, gamma])
     
     S, E, I, R = sol.y
     return tspan, S, E, I, R  
