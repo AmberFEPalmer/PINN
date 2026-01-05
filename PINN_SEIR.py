@@ -58,7 +58,7 @@ def create_pinn_model():
     x = Dense(32, activation='tanh')(x)
     
     ### Output layers for S, E, I, R
-    ### sigmoid outputs variables in [-1, 1]
+    ### sigmoid outputs variables in [0, 1]
     S = Dense(1, activation='sigmoid', name='S')(x)
     E = Dense(1, activation='sigmoid', name='E')(x)
     I = Dense(1, activation='sigmoid', name='I')(x)
@@ -75,6 +75,9 @@ def create_pinn_model():
 model = create_pinn_model()
 ### Print model architecture
 model.summary()
+
+### See if tensorflow is using GPU (it is not can run in google colab instead)
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU'))) 
 
 ### Define physics informed loss
 def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
@@ -169,12 +172,12 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     IC_loss = tf.reduce_mean(IC_loss)
     
     ### Data loss 
-    t_data_normalized = t_data_loss / t_max
+    t_data_normalized = t_data_loss ### t_data is already normalised (don't need to divide by t_max as done in previous versions of code)
     _, _, I_pred, _, _ = net(t_data_normalized)
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0*physics_loss + 1.0*IC_loss + 100.0*data_loss
+    total_loss = 10.0*physics_loss + 1.0*IC_loss + 100.0*data_loss
     
     return total_loss
 
@@ -230,12 +233,6 @@ plt.yscale('log')
 plt.grid(True)
 plt.show()
 
-### Visualize SEIR predictions
-t_test = t_data.reshape(-1, 1) / t_max  
-S_pred, E_pred, I_pred, R_pred, beta_pred = model.predict(t_test)
-
-plt.figure(figsize=(12, 5))
-
 # Plot infected compartment vs data
 plt.plot(t_test, I_pred, 'b-', label='I (predicted)', linewidth=2)
 plt.plot(t_data, I_data, color='red', label='I (observed)', linewidth=2)
@@ -244,7 +241,6 @@ plt.ylabel('Infected (normalized)')
 plt.title('Infected Compartment vs Observed Data')
 plt.legend()
 plt.grid(True)
-
 plt.tight_layout()
 plt.show()
 
