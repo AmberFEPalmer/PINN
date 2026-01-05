@@ -66,7 +66,7 @@ def create_pinn_model():
 
     ### Time-varying beta (must be positive)
     ### Following what was done in Qian et al. 2025 paper
-    beta = Dense(1, activation='softplus', name='beta')(x)  
+    beta = Dense(1, activation='sigmoid', name='beta')(x)  
 
     ### Create the model - inputs = time, outputs = SEIR compartments
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
