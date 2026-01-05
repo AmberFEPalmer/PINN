@@ -139,10 +139,10 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     ### Compute derivatives e.g. dS/dt
     ### Scale derivatives because time is normalised
     scale_factor = t_data.max()
-    dS_dt = tape.gradient(S, t_col) 
-    dE_dt = tape.gradient(E, t_col)
-    dI_dt = tape.gradient(I, t_col) 
-    dR_dt = tape.gradient(R, t_col) 
+    dS_dt = tape.gradient(S, t_col) * scale_factor 
+    dE_dt = tape.gradient(E, t_col) * scale_factor 
+    dI_dt = tape.gradient(I, t_col) * scale_factor 
+    dR_dt = tape.gradient(R, t_col) * scale_factor 
     del tape
 
     ### SEIR equations
@@ -166,7 +166,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     
     IC_loss = (tf.square(S_0 - S0) + tf.square(E_0 - E0) + 
                tf.square(I_0 - I0) + tf.square(R_0 - R0))
-    IC_loss = tf.reduce_sum(IC_loss)
+    IC_loss = tf.reduce_mean(IC_loss)
     
     ### Data loss 
     t_data_normalized = t_data_loss / t_max
@@ -174,7 +174,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0*physics_loss + 1.0*IC_loss + 1000.0*data_loss
+    total_loss = 1.0*physics_loss + 1.0*IC_loss + 100.0*data_loss
     
     return total_loss
 
@@ -226,12 +226,12 @@ plt.plot(train_loss_record)
 plt.xlabel('Iteration')
 plt.ylabel('Loss')
 plt.title('Training Loss Over Time')
-plt.yscale('log')  # Log scale often helps visualize loss
+plt.yscale('log')  
 plt.grid(True)
 plt.show()
 
 ### Visualize SEIR predictions
-t_test = t_data.reshape(-1, 1) / t_max  # Normalize to [0,1] as in training
+t_test = t_data.reshape(-1, 1) / t_max  
 S_pred, E_pred, I_pred, R_pred, beta_pred = model.predict(t_test)
 
 plt.figure(figsize=(12, 5))
@@ -262,5 +262,5 @@ print("Mean Squared Error:", mse_value)
 
 ### Model evaluation - mean absolute percentage error
 mape = tf.keras.losses.MeanAbsolutePercentageError()
-mape_value = mae(I_data, I_pred).numpy()
+mape_value = mape(I_data, I_pred).numpy()
 print("Mean Absolute Percentage Error:", mape_value)
