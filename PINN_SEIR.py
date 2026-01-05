@@ -37,7 +37,7 @@ I_tensor = tf.convert_to_tensor(I_data, dtype=tf.float32)
 
 # Create collocation points across full range
 # t_data is already normalized to [0,1] when saved in t_data_2020.npy
-t_col = np.linspace(0, 1, 500).reshape(-1, 1)  # 500 collocation points across [0,1]
+t_col = np.linspace(0, 1, 2000).reshape(-1, 1)  # 2000 collocation points across [0,1]
 t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
 
 ### Define PINN
@@ -45,17 +45,17 @@ def create_pinn_model():
     ### Input layer - time (shape = 1 because time is 1D)
     t_input = Input(shape=(1,), name='time_input')
     
-    ### Hidden layer 1 = 32 neurons, tanh activation
+    ### Hidden layer 1 = 64 neurons, tanh activation
     ### Tanh activation is a good choice for this model because it is non-linear and smooth
     ### tanh outputs values in [-1,1]
-    x = Dense(32, activation='tanh')(t_input)
+    x = Dense(64, activation='tanh')(t_input)
     
     ### Hidden layers 2 + 3 = 64 neurons, tanh activation  
     x = Dense(64, activation='tanh')(x)
     x = Dense(64, activation='tanh')(x)
     
-    ### Hidden layer 4 = 32 neurons, tanh activation       
-    x = Dense(32, activation='tanh')(x)
+    ### Hidden layer 4 = 64 neurons, tanh activation       
+    x = Dense(64, activation='tanh')(x)
     
     ### Output layers for S, E, I, R
     ### sigmoid outputs variables in [0, 1]
@@ -173,13 +173,13 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0*physics_loss + 1.0*IC_loss + 100.0*data_loss
+    total_loss = data_loss
     
     return total_loss
 
 ### Define parameters 
-sigma_raw = tf.Variable(0.5, dtype=tf.float32, name='sigma_raw')
-gamma_raw = tf.Variable(0.3, dtype=tf.float32, name='gamma_raw')
+sigma_raw = tf.Variable(0.2, dtype=tf.float32, name='sigma_raw')
+gamma_raw = tf.Variable(0.2, dtype=tf.float32, name='gamma_raw')
 
 S0_raw = tf.Variable(0.9, dtype=tf.float32, name='S0_raw')
 E0_raw = tf.Variable(0.05, dtype=tf.float32, name='E0_raw')
