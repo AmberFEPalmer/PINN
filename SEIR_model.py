@@ -10,12 +10,12 @@ E0 = 0
 I0 = 1
 R0 = 0
 S0 = 560000
-days = 31
+days = 337
 
 ### Parameters
 sigma = 0.5
 gamma = 0.3
-beta = 0.3
+beta = 0.2
 
 ### SEIR equations
 def ode_model(t, y, beta, sigma, gamma):
@@ -61,8 +61,8 @@ plt.ylabel("Number of people in each compartment")
 plt.show()
 
 ### Import the COVID-19 data
-t_data = np.load("data/t_data_raw_2020-03.npy")       ### time points 
-I_data = np.load("data/I_data_raw_2020-03.npy") 
+t_data = np.load("data/t_data_raw_2020.npy")       ### time points 
+I_data = np.load("data/I_data_raw_2020.npy") 
 
 plt.figure()
 plt.plot(t_data, I_data)
