@@ -16,6 +16,7 @@ from tensorflow.keras.optimizers import Adam
 ### TODO look at handling noisy data
 ### TODO compare to other methods e.g. traditional time series, LSTM, neural networks etc
 ### TODO R implementation
+### TODO Make model learn initial conditions from data
 
 ### https://www.tensorflow.org/tutorials/customization/basics
 ### https://www.tensorflow.org/api_docs/python/tf/convert_to_tensor 
@@ -186,6 +187,7 @@ sigma_raw = tf.Variable(0.5, dtype=tf.float32, name='sigma_raw')
 gamma_raw = tf.Variable(0.3, dtype=tf.float32, name='gamma_raw')
 
 ### Optimizer
+### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
 optm = Adam(learning_rate=0.01) ### Adam = one of the most common optimisers
 
 ### Collocation points for physics loss
