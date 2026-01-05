@@ -16,7 +16,6 @@ from tensorflow.keras.optimizers import Adam
 ### TODO look at handling noisy data
 ### TODO compare to other methods e.g. traditional time series, LSTM, neural networks etc
 ### TODO R implementation
-### TODO Make model learn initial conditions from data
 
 ### https://www.tensorflow.org/tutorials/customization/basics
 ### https://www.tensorflow.org/api_docs/python/tf/convert_to_tensor 
@@ -77,11 +76,8 @@ model = create_pinn_model()
 ### Print model architecture
 model.summary()
 
-### See if tensorflow is using GPU (it is not can run in google colab instead)
-print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU'))) 
-
 ### Define physics informed loss
-def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
+def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0_raw, E0_raw, I0_raw, R0_raw):
     """
     Calculate physics informed loss
     
@@ -119,20 +115,19 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
         I_data_loss = tf.reshape(I_data_loss, (-1, 1))
     
     ### Estimate starting values for the SEIR equations based on the first infection value
-    I0_val = float(I_data_loss[0])   
-    E0_val = 3.0 * I0_val ### (3x the number of infected individuals)
-    R0_val = 0.0 ### no individuals start recovered
-    S0_val = 1.0 - I0_val - E0_val - R0_val 
-    S0_val = max(S0_val, 0.0)
+    S0_val = tf.nn.sigmoid(S0_raw)
+    E0_val = tf.nn.sigmoid(E0_raw)
+    I0_val = tf.nn.sigmoid(I0_raw)
+    R0_val = tf.nn.sigmoid(R0_raw)
 
-    ### Convert to tensors 
-    ### https://www.tensorflow.org/api_docs/python/tf/constant
-    S0 = tf.constant([[S0_val]], dtype=tf.float32)
-    E0 = tf.constant([[E0_val]], dtype=tf.float32)
-    I0 = tf.constant([[I0_val]], dtype=tf.float32)
-    R0 = tf.constant([[R0_val]], dtype=tf.float32)
+    ### Normalize so they sum to 1 (representing total population)
+    total = S0_val + E0_val + I0_val + R0_val
+    S0 = tf.reshape(S0_val / total, (1, 1))
+    E0 = tf.reshape(E0_val / total, (1, 1))
+    I0 = tf.reshape(I0_val / total, (1, 1))
+    R0 = tf.reshape(R0_val / total, (1, 1))
     
-    N = 1.0  ### total population in scaled units
+    N = 1.0
     
     ### Physics loss at collocation points
     ### https://www.tensorflow.org/api_docs/python/tf/GradientTape
@@ -178,13 +173,19 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 10.0*physics_loss + 1.0*IC_loss + 100.0*data_loss
+    total_loss = 1.0*physics_loss + 1.0*IC_loss + 100.0*data_loss
     
     return total_loss
 
 ### Define parameters 
 sigma_raw = tf.Variable(0.5, dtype=tf.float32, name='sigma_raw')
 gamma_raw = tf.Variable(0.3, dtype=tf.float32, name='gamma_raw')
+
+S0_raw = tf.Variable(0.9, dtype=tf.float32, name='S0_raw')
+E0_raw = tf.Variable(0.05, dtype=tf.float32, name='E0_raw')
+I0_raw = tf.Variable(0.05, dtype=tf.float32, name='I0_raw')
+R0_raw = tf.Variable(0.0, dtype=tf.float32, name='R0_raw')
+
 
 ### Optimizer
 ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
@@ -193,7 +194,7 @@ optm = Adam(learning_rate=0.01) ### Adam = one of the most common optimisers
 ### Collocation points for physics loss
 ### Collocation points cover the time of the model
 ### 100 points where the physics loss is evaluated in the model
-trainable_vars = model.trainable_variables + [sigma_raw, gamma_raw]
+trainable_vars = model.trainable_variables + [sigma_raw, gamma_raw, S0_raw, E0_raw, I0_raw, R0_raw]
 
 ### Training loop
 train_loss_record = []
@@ -201,7 +202,8 @@ train_loss_record = []
 print("Starting training...")
 for itr in range(10000):
     with tf.GradientTape() as tape:
-        train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, sigma_raw, gamma_raw)
+        train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, 
+                                   sigma_raw, gamma_raw, S0_raw, E0_raw, I0_raw, R0_raw)
     
     train_loss_record.append(train_loss.numpy())
     
@@ -213,6 +215,14 @@ for itr in range(10000):
         sigma_current = tf.nn.softplus(sigma_raw).numpy()
         gamma_current = tf.nn.softplus(gamma_raw).numpy()
         print(f"σ={sigma_current:.4f}, γ={gamma_current:.4f}")
+        
+        # Print learned initial conditions
+        S0_val = tf.nn.sigmoid(S0_raw).numpy()
+        E0_val = tf.nn.sigmoid(E0_raw).numpy()
+        I0_val = tf.nn.sigmoid(I0_raw).numpy()
+        R0_val = tf.nn.sigmoid(R0_raw).numpy()
+        total = S0_val + E0_val + I0_val + R0_val
+        print(f"Initial Conditions: S0={S0_val/total:.4f}, E0={E0_val/total:.4f}, I0={I0_val/total:.4f}, R0={R0_val/total:.4f}")
 
 print("\nTraining complete!")
 print(f"\nFinal learned parameters:")
@@ -220,6 +230,18 @@ sigma_final = tf.nn.softplus(sigma_raw).numpy()
 gamma_final = tf.nn.softplus(gamma_raw).numpy()
 print(f"σ (incubation rate) = {sigma_final:.4f}")
 print(f"γ (recovery rate) = {gamma_final:.4f}")
+
+# Print final learned initial conditions
+S0_final = tf.nn.sigmoid(S0_raw).numpy()
+E0_final = tf.nn.sigmoid(E0_raw).numpy()
+I0_final = tf.nn.sigmoid(I0_raw).numpy()
+R0_final = tf.nn.sigmoid(R0_raw).numpy()
+total_final = S0_final + E0_final + I0_final + R0_final
+print(f"\nFinal learned initial conditions:")
+print(f"S(0) = {S0_final/total_final:.4f}")
+print(f"E(0) = {E0_final/total_final:.4f}")
+print(f"I(0) = {I0_final/total_final:.4f}")
+print(f"R(0) = {R0_final/total_final:.4f}")
 
 ### Save model
 model.save('seir_pinn_model.keras')
