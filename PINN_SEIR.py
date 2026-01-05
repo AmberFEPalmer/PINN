@@ -6,9 +6,6 @@ from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 
-### https://i-systems.github.io/tutorial/KSNVE/220525/01_PINN.html
-### My PINN creation is slightly different due to having 4 coupled ODEs
-
 ### https://vitalitylearning.medium.com/solving-a-first-order-ode-with-physics-informed-neural-networks-22e385f09d35
 
 ### code from seminal paper https://github.com/maziarraissi/PINNs
@@ -26,9 +23,9 @@ from tensorflow.keras.optimizers import Adam
 ### Load preprocessed data (from COVID_Data.py script)
 ### These data are arrays
 
-t_data = np.load("t_data_2020-03.npy")       ### time points 
-I_data = np.load("I_data_2020-03.npy")       ### observed infections
-t_col  = np.load("t_col_2020-03.npy")        ### collocation points for physics loss
+t_data = np.load("data/t_data_2020.npy")       ### time points 
+I_data = np.load("data/I_data_2020.npy")       ### observed infections
+t_col  = np.load("data/t_col.npy")        ### collocation points for physics loss
 
 ### Store the max time for scaling
 t_max = t_data.max()
