@@ -223,6 +223,10 @@ print(f"γ (recovery rate) = {gamma_final:.4f}")
 model.save('seir_pinn_model.keras')
 print("\nModel saved as 'seir_pinn_model.keras'")
 
+# Before plotting
+t_test = t_data  # or create a new test range
+_, _, I_pred, _, _ = model(t_tensor)
+
 ### Plot training loss
 plt.figure(figsize=(10, 8))
 plt.plot(train_loss_record)
