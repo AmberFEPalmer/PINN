@@ -37,7 +37,6 @@ I_tensor = tf.convert_to_tensor(I_data, dtype=tf.float32)
 
 # Create collocation points across full range
 # t_data is already normalized to [0,1] when saved in t_data_2020.npy
-t_col = np.linspace(0, 1, 2000).reshape(-1, 1)  # 2000 collocation points across [0,1]
 t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
 
 ### Define PINN
@@ -51,8 +50,10 @@ def create_pinn_model():
     x = Dense(64, activation='tanh')(t_input)
     
     ### Hidden layers 2 + 3 = 64 neurons, tanh activation  
-    x = Dense(64, activation='tanh')(x)
-    x = Dense(64, activation='tanh')(x)
+    x = Dense(128, activation='tanh')(x)
+    x = Dense(128, activation='tanh')(x)
+    x = Dense(128, activation='tanh')(x)
+    x = Dense(128, activation='tanh')(x)
     
     ### Hidden layer 4 = 64 neurons, tanh activation       
     x = Dense(64, activation='tanh')(x)
@@ -66,7 +67,7 @@ def create_pinn_model():
 
     ### Time-varying beta (must be positive)
     ### Following what was done in Qian et al. 2025 paper
-    beta = Dense(1, activation='sigmoid', name='beta')(x)  
+    beta = Dense(1, activation='softplus', name='beta')(x)  
 
     ### Create the model - inputs = time, outputs = SEIR compartments
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
@@ -173,7 +174,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = data_loss
+    total_loss = 100.0*data_loss + 1.0*IC_loss + 10.0*physics_loss
     
     return total_loss
 
@@ -189,7 +190,15 @@ R0_raw = tf.Variable(0.0, dtype=tf.float32, name='R0_raw')
 
 ### Optimizer
 ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
-optm = Adam(learning_rate=0.01) ### Adam = one of the most common optimisers
+### Adam = one of the most common optimisers
+initial_lr = 0.001
+lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate=initial_lr,
+    decay_steps=1000,
+    decay_rate=0.95,
+    staircase=True
+)
+optm = Adam(learning_rate=lr_schedule)
 
 ### Collocation points for physics loss
 ### Collocation points cover the time of the model
@@ -200,7 +209,7 @@ trainable_vars = model.trainable_variables + [sigma_raw, gamma_raw, S0_raw, E0_r
 train_loss_record = []
 
 print("Starting training...")
-for itr in range(10000):
+for itr in range(40000):
     with tf.GradientTape() as tape:
         train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, 
                                    sigma_raw, gamma_raw, S0_raw, E0_raw, I0_raw, R0_raw)
@@ -210,7 +219,7 @@ for itr in range(10000):
     grad_w = tape.gradient(train_loss, trainable_vars)
     optm.apply_gradients(zip(grad_w, trainable_vars))
     
-    if itr % 1000 == 0:
+    if itr % 5000 == 0:
         print(f"Iteration {itr}, Loss: {train_loss.numpy():.6f}")
         sigma_current = tf.nn.softplus(sigma_raw).numpy()
         gamma_current = tf.nn.softplus(gamma_raw).numpy()
