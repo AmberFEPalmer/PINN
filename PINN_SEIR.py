@@ -6,23 +6,13 @@ from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 
+### Main websites used 
 ### https://vitalitylearning.medium.com/solving-a-first-order-ode-with-physics-informed-neural-networks-22e385f09d35
-
 ### code from seminal paper https://github.com/maziarraissi/PINNs
-
-### TODO test-train split data
-### TODO PDEs
-### TODO look at what spatial elements could be incorporated
-### TODO look at handling noisy data
-### TODO compare to other methods e.g. traditional time series, LSTM, neural networks etc
-### TODO R implementation
-
 ### https://www.tensorflow.org/tutorials/customization/basics
-### https://www.tensorflow.org/api_docs/python/tf/convert_to_tensor 
 
 ### Load preprocessed data (from COVID_Data.py script)
 ### These data are arrays
-
 t_data = np.load("data/t_data_2020.npy")       ### time points 
 I_data = np.load("data/I_data_2020.npy")       ### observed infections
 t_col  = np.load("data/t_col.npy")        ### collocation points for physics loss
@@ -36,26 +26,18 @@ t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
 I_tensor = tf.convert_to_tensor(I_data, dtype=tf.float32)
 
 # Create collocation points across full range
-# t_data is already normalized to [0,1] when saved in t_data_2020.npy
 t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
-
-### Define initial conditions
-S0 = tf.constant([[0.999]], dtype=tf.float32)
-E0 = tf.constant([[0.005]], dtype=tf.float32)
-I0 = tf.constant([[0.005]], dtype=tf.float32)
-R0 = tf.constant([[0.0]], dtype=tf.float32)
 
 ### Define PINN
 def create_pinn_model():
     ### Input layer - time (shape = 1 because time is 1D)
     t_input = Input(shape=(1,), name='time_input')
     
-    ### Hidden layer 1 = 64 neurons, tanh activation
-    ### Tanh activation is a good choice for this model because it is non-linear and smooth
+    ### Hidden layer 1 = 64 neurons, tanh activation (tanh = non-linear + smooth)
     ### tanh outputs values in [-1,1]
     x = Dense(64, activation='tanh')(t_input)
     
-    ### Hidden layers 2 + 3 = 64 neurons, tanh activation  
+    ### Hidden layers 2 + 3 + 4 + 5 = 128 neurons, tanh activation  
     x = Dense(128, activation='tanh')(x)
     x = Dense(128, activation='tanh')(x)
     x = Dense(128, activation='tanh')(x)
@@ -75,7 +57,7 @@ def create_pinn_model():
     ### Following what was done in Qian et al. 2025 paper
     beta = Dense(1, activation='tanh', name='beta')(x)  
 
-    ### Create the model - inputs = time, outputs = SEIR compartments
+    ### Create the model -> inputs = time, outputs = SEIR compartments
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
     return model
 
@@ -83,6 +65,7 @@ model = create_pinn_model()
 ### Print model architecture
 model.summary()
 
+### Define initial conditions
 S0 = tf.constant(0.9, dtype=tf.float32)
 E0 = tf.constant(0.05, dtype=tf.float32)
 I0 = tf.constant(0.05, dtype=tf.float32)
@@ -90,25 +73,12 @@ R0 = tf.constant(0.0, dtype=tf.float32)
 
 ### Define physics informed loss
 def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
-    """
-    Calculate physics informed loss
-    
-    :param t_col: Collocation points (normalised)
-    :param t_data_loss: time points for data
-    :param I_data_loss: Infection data
-    :param net: Neural network model
-    :param beta_raw: Trainable parameter
-    :param sigma_raw: Trainable parameter
-    :param gamma_raw: Trainable parameter
-    :t_max: maximum time value for scaling
-    """
+
 ### Apply softplus to ensure positive parameters
-### https://www.tensorflow.org/api_docs/python/tf/math/softplus
     sigma = tf.nn.softplus(sigma_raw)
     gamma = tf.nn.softplus(gamma_raw)
 
     ### if t_col is a 1D array it is reshaped to a column vector
-    ### https://www.tensorflow.org/api_docs/python/tf/reshape
     if len(t_col.shape) == 1:
         t_col = tf.reshape(t_col, (-1, 1))
     
@@ -125,8 +95,6 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     ### if I_data_loss is a 1D array it is reshaped to a column vector
     if len(I_data_loss.shape) == 1:
         I_data_loss = tf.reshape(I_data_loss, (-1, 1))
-
-    N = 1.0
     
     ### Physics loss at collocation points
     ### https://www.tensorflow.org/api_docs/python/tf/GradientTape
@@ -144,13 +112,13 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     del tape
 
     ### SEIR equations
+    N = 1.0
     dS_dt_true = -beta * S * I / N
     dE_dt_true = beta * S * I / N - sigma * E
     dI_dt_true = sigma * E - gamma * I
     dR_dt_true = gamma * I
     
     ### Physics-informed loss - mean squared error
-    ### https://www.tensorflow.org/api_docs/python/tf/math/reduce_mean
     physics_loss = tf.reduce_mean(
         tf.square(dS_dt - dS_dt_true) +
         tf.square(dE_dt - dE_dt_true) +
@@ -169,12 +137,12 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
         tf.square(R_0 - R0_fixed) )
     
     ### Data loss 
-    t_data_normalized = t_data_loss ### t_data is already normalised (don't need to divide by t_max as done in previous versions of code)
+    t_data_normalized = t_data_loss 
     _, _, I_pred, _, _ = net(t_data_normalized)
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1000.0*data_loss + 1.0*physics_loss + 1.0*IC_loss
+    total_loss = 1000.0*data_loss + 1.0*physics_loss 
     
     return total_loss
 
@@ -187,9 +155,7 @@ E0_fixed = E0
 I0_fixed = I0
 R0_fixed = R0
 
-### Optimizer
 ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
-### Adam = one of the most common optimisers
 initial_lr = 0.0001
 lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
     initial_learning_rate=initial_lr,
@@ -200,8 +166,6 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 optm = Adam(learning_rate=lr_schedule)
 
 ### Collocation points for physics loss
-### Collocation points cover the time of the model
-### 100 points where the physics loss is evaluated in the model
 trainable_vars = model.trainable_variables + [sigma_raw, gamma_raw]
 n_collocation = 500
 t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
@@ -211,7 +175,7 @@ t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 train_loss_record = []
 
 print("Starting training...")
-for itr in range(50000):
+for itr in range(60000):
     with tf.GradientTape() as tape:
         train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, 
                                    sigma_raw, gamma_raw)
@@ -238,7 +202,6 @@ print(f"γ (recovery rate) = {gamma_final:.4f}")
 model.save('seir_pinn_model.keras')
 print("\nModel saved as 'seir_pinn_model.keras'")
 
-# Before plotting
 t_test = t_data  
 _, _, I_pred, _, _ = model(t_tensor)
 
@@ -263,14 +226,26 @@ plt.grid(True)
 plt.tight_layout()
 plt.show()
 
+### Plotting beta over time
+t_plot = np.linspace(0, 1, 500).reshape(-1, 1)
+t_plot_tensor = tf.convert_to_tensor(t_plot, dtype=tf.float32)
+
+_, _, _, _, beta_pred = model(t_plot_tensor)
+beta_pred_numpy = beta_pred().flatten()
+
+plt.plot(t_plot, beta_pred_numpy, 'g-', linewidth=2)
+plt.xlabel('normalised time')
+plt.ylabel('Bt')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
 ### Model evaluation - mean absolute error
-### https://www.tensorflow.org/api_docs/python/tf/keras/losses/MeanAbsoluteError
 mae = tf.keras.losses.MeanAbsoluteError()
 mae_value = mae(I_data, I_pred).numpy()
 print("Mean Absolute Error:", mae_value)
 
 ### Model evaluation - mean sqaured error
-### https://www.tensorflow.org/api_docs/python/tf/keras/losses/MeanSquaredError
 mse = tf.keras.losses.MeanSquaredError()
 mse_value = mse(I_data, I_pred).numpy()
 print("Mean Squared Error:", mse_value)
