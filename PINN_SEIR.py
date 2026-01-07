@@ -66,10 +66,10 @@ def create_pinn_model():
     
     ### Output layers for S, E, I, R
     ### sigmoid outputs variables in [0, 1]
-    S = Dense(1, activation='tanh', name='S')(x)
-    E = Dense(1, activation='tanh', name='E')(x)
-    I = Dense(1, activation='tanh', name='I')(x)
-    R = Dense(1, activation='tanh', name='R')(x)
+    S = Dense(1, activation='sigmoid', name='S')(x)
+    E = Dense(1, activation='sigmoid', name='E')(x)
+    I = Dense(1, activation='sigmoid', name='I')(x)
+    R = Dense(1, activation='sigmoid', name='R')(x)
 
     ### Time-varying beta (must be positive)
     ### Following what was done in Qian et al. 2025 paper
@@ -83,8 +83,13 @@ model = create_pinn_model()
 ### Print model architecture
 model.summary()
 
+S0 = tf.constant(0.9, dtype=tf.float32)
+E0 = tf.constant(0.05, dtype=tf.float32)
+I0 = tf.constant(0.05, dtype=tf.float32)
+R0 = tf.constant(0.0, dtype=tf.float32)
+
 ### Define physics informed loss
-def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0_raw, E0_raw, I0_raw, R0_raw):
+def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     """
     Calculate physics informed loss
     
@@ -120,20 +125,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0
     ### if I_data_loss is a 1D array it is reshaped to a column vector
     if len(I_data_loss.shape) == 1:
         I_data_loss = tf.reshape(I_data_loss, (-1, 1))
-    
-    ### Estimate starting values for the SEIR equations based on the first infection value
-    S0_val = tf.nn.sigmoid(S0_raw)
-    E0_val = tf.nn.sigmoid(E0_raw)
-    I0_val = tf.nn.sigmoid(I0_raw)
-    R0_val = tf.nn.sigmoid(R0_raw)
 
-    ### Normalize so they sum to 1 (representing total population)
-    total = S0_val + E0_val + I0_val + R0_val
-    S0 = tf.reshape(S0_val / total, (1, 1))
-    E0 = tf.reshape(E0_val / total, (1, 1))
-    I0 = tf.reshape(I0_val / total, (1, 1))
-    R0 = tf.reshape(R0_val / total, (1, 1))
-    
     N = 1.0
     
     ### Physics loss at collocation points
@@ -144,7 +136,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0
         
     ### Compute derivatives e.g. dS/dt
     ### Scale derivatives because time is normalised
-    scale_factor = t_data.max()
+    scale_factor = tf.constant(t_data.max(), dtype = tf.float32)
     dS_dt = tape.gradient(S, t_col) * scale_factor 
     dE_dt = tape.gradient(E, t_col) * scale_factor 
     dI_dt = tape.gradient(I, t_col) * scale_factor 
@@ -171,10 +163,10 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0
     S_0, E_0, I_0, R_0, _ = net(t_zero)
     
     IC_loss = tf.reduce_mean(
-        tf.square(S_0 - S0) +
-        tf.square(E_0 - E0) +
-        tf.square(I_0 - I0) +
-        tf.square(R_0 - R0) )
+        tf.square(S_0 - S0_fixed) +
+        tf.square(E_0 - E0_fixed) +
+        tf.square(I_0 - I0_fixed) +
+        tf.square(R_0 - R0_fixed) )
     
     ### Data loss 
     t_data_normalized = t_data_loss ### t_data is already normalised (don't need to divide by t_max as done in previous versions of code)
@@ -182,7 +174,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 100.0*data_loss + 1.0*IC_loss + 10.0*physics_loss
+    total_loss = 1000.0*data_loss + 1.0*IC_loss + 1.0*physics_loss
     
     return total_loss
 
@@ -190,10 +182,10 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0
 sigma_raw = tf.Variable(0.2, dtype=tf.float32, name='sigma_raw')
 gamma_raw = tf.Variable(0.2, dtype=tf.float32, name='gamma_raw')
 
-S0_raw = tf.Variable(0.9, dtype=tf.float32, name='S0_raw')
-E0_raw = tf.Variable(0.05, dtype=tf.float32, name='E0_raw')
-I0_raw = tf.Variable(0.05, dtype=tf.float32, name='I0_raw')
-R0_raw = tf.Variable(0.0, dtype=tf.float32, name='R0_raw')
+S0_fixed = S0
+E0_fixed = E0
+I0_fixed = I0
+R0_fixed = R0
 
 
 ### Optimizer
@@ -211,7 +203,7 @@ optm = Adam(learning_rate=lr_schedule)
 ### Collocation points for physics loss
 ### Collocation points cover the time of the model
 ### 100 points where the physics loss is evaluated in the model
-trainable_vars = model.trainable_variables + [sigma_raw, gamma_raw, S0_raw, E0_raw, I0_raw, R0_raw]
+trainable_vars = model.trainable_variables + [sigma_raw, gamma_raw]
 n_collocation = 500
 t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
 t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
@@ -223,7 +215,7 @@ print("Starting training...")
 for itr in range(10000):
     with tf.GradientTape() as tape:
         train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, 
-                                   sigma_raw, gamma_raw, S0_raw, E0_raw, I0_raw, R0_raw)
+                                   sigma_raw, gamma_raw)
     
     train_loss_record.append(train_loss.numpy())
     
