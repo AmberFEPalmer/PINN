@@ -174,7 +174,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1000.0*data_loss + 1.0*IC_loss + 1.0*physics_loss
+    total_loss = 1000.0*data_loss + 1.0*physics_loss + 1.0*IC_loss
     
     return total_loss
 
@@ -187,11 +187,10 @@ E0_fixed = E0
 I0_fixed = I0
 R0_fixed = R0
 
-
 ### Optimizer
 ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
 ### Adam = one of the most common optimisers
-initial_lr = 0.001
+initial_lr = 0.0001
 lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
     initial_learning_rate=initial_lr,
     decay_steps=1000,
@@ -212,7 +211,7 @@ t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 train_loss_record = []
 
 print("Starting training...")
-for itr in range(10000):
+for itr in range(50000):
     with tf.GradientTape() as tape:
         train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, 
                                    sigma_raw, gamma_raw)
@@ -222,7 +221,7 @@ for itr in range(10000):
     grad_w = tape.gradient(train_loss, trainable_vars)
     optm.apply_gradients(zip(grad_w, trainable_vars))
     
-    if itr % 1000 == 0:
+    if itr % 5000 == 0:
         print(f"Iteration {itr}, Loss: {train_loss.numpy():.6f}")
         sigma_current = tf.nn.softplus(sigma_raw).numpy()
         gamma_current = tf.nn.softplus(gamma_raw).numpy()
@@ -240,7 +239,7 @@ model.save('seir_pinn_model.keras')
 print("\nModel saved as 'seir_pinn_model.keras'")
 
 # Before plotting
-t_test = t_data  # or create a new test range
+t_test = t_data  
 _, _, I_pred, _, _ = model(t_tensor)
 
 ### Plot training loss
