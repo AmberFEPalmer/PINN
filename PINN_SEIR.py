@@ -41,8 +41,8 @@ t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
 
 ### Define initial conditions
 S0 = tf.constant([[0.999]], dtype=tf.float32)
-E0 = tf.constant([[0.0005]], dtype=tf.float32)
-I0 = tf.constant([[0.0005]], dtype=tf.float32)
+E0 = tf.constant([[0.005]], dtype=tf.float32)
+I0 = tf.constant([[0.005]], dtype=tf.float32)
 R0 = tf.constant([[0.0]], dtype=tf.float32)
 
 ### Define PINN
@@ -182,7 +182,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 100.0*data_loss + 1000.0*IC_loss + 10.0*physics_loss
+    total_loss = 100.0*data_loss + 1.0*IC_loss + 10.0*physics_loss
     
     return total_loss
 
