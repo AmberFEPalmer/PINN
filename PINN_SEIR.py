@@ -39,6 +39,12 @@ I_tensor = tf.convert_to_tensor(I_data, dtype=tf.float32)
 # t_data is already normalized to [0,1] when saved in t_data_2020.npy
 t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
 
+### Define initial conditions
+S0 = tf.constant([[0.999]], dtype=tf.float32)
+E0 = tf.constant([[0.0005]], dtype=tf.float32)
+I0 = tf.constant([[0.0005]], dtype=tf.float32)
+R0 = tf.constant([[0.0]], dtype=tf.float32)
+
 ### Define PINN
 def create_pinn_model():
     ### Input layer - time (shape = 1 because time is 1D)
@@ -60,14 +66,14 @@ def create_pinn_model():
     
     ### Output layers for S, E, I, R
     ### sigmoid outputs variables in [0, 1]
-    S = Dense(1, activation='sigmoid', name='S')(x)
-    E = Dense(1, activation='sigmoid', name='E')(x)
-    I = Dense(1, activation='sigmoid', name='I')(x)
-    R = Dense(1, activation='sigmoid', name='R')(x)
+    S = Dense(1, activation='tanh', name='S')(x)
+    E = Dense(1, activation='tanh', name='E')(x)
+    I = Dense(1, activation='tanh', name='I')(x)
+    R = Dense(1, activation='tanh', name='R')(x)
 
     ### Time-varying beta (must be positive)
     ### Following what was done in Qian et al. 2025 paper
-    beta = Dense(1, activation='softplus', name='beta')(x)  
+    beta = Dense(1, activation='tanh', name='beta')(x)  
 
     ### Create the model - inputs = time, outputs = SEIR compartments
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
@@ -164,9 +170,11 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0
     t_zero = tf.constant([[0.0]], dtype=tf.float32) 
     S_0, E_0, I_0, R_0, _ = net(t_zero)
     
-    IC_loss = (tf.square(S_0 - S0) + tf.square(E_0 - E0) + 
-               tf.square(I_0 - I0) + tf.square(R_0 - R0))
-    IC_loss = tf.reduce_mean(IC_loss)
+    IC_loss = tf.reduce_mean(
+        tf.square(S_0 - S0) +
+        tf.square(E_0 - E0) +
+        tf.square(I_0 - I0) +
+        tf.square(R_0 - R0) )
     
     ### Data loss 
     t_data_normalized = t_data_loss ### t_data is already normalised (don't need to divide by t_max as done in previous versions of code)
@@ -174,7 +182,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw, S0
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 100.0*data_loss + 1.0*IC_loss + 10.0*physics_loss
+    total_loss = 100.0*data_loss + 1000.0*IC_loss + 10.0*physics_loss
     
     return total_loss
 
@@ -204,12 +212,15 @@ optm = Adam(learning_rate=lr_schedule)
 ### Collocation points cover the time of the model
 ### 100 points where the physics loss is evaluated in the model
 trainable_vars = model.trainable_variables + [sigma_raw, gamma_raw, S0_raw, E0_raw, I0_raw, R0_raw]
+n_collocation = 500
+t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
+t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 
 ### Training loop
 train_loss_record = []
 
 print("Starting training...")
-for itr in range(40000):
+for itr in range(10000):
     with tf.GradientTape() as tape:
         train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, 
                                    sigma_raw, gamma_raw, S0_raw, E0_raw, I0_raw, R0_raw)
@@ -219,19 +230,11 @@ for itr in range(40000):
     grad_w = tape.gradient(train_loss, trainable_vars)
     optm.apply_gradients(zip(grad_w, trainable_vars))
     
-    if itr % 5000 == 0:
+    if itr % 1000 == 0:
         print(f"Iteration {itr}, Loss: {train_loss.numpy():.6f}")
         sigma_current = tf.nn.softplus(sigma_raw).numpy()
         gamma_current = tf.nn.softplus(gamma_raw).numpy()
         print(f"σ={sigma_current:.4f}, γ={gamma_current:.4f}")
-        
-        # Print learned initial conditions
-        S0_val = tf.nn.sigmoid(S0_raw).numpy()
-        E0_val = tf.nn.sigmoid(E0_raw).numpy()
-        I0_val = tf.nn.sigmoid(I0_raw).numpy()
-        R0_val = tf.nn.sigmoid(R0_raw).numpy()
-        total = S0_val + E0_val + I0_val + R0_val
-        print(f"Initial Conditions: S0={S0_val/total:.4f}, E0={E0_val/total:.4f}, I0={I0_val/total:.4f}, R0={R0_val/total:.4f}")
 
 print("\nTraining complete!")
 print(f"\nFinal learned parameters:")
@@ -239,18 +242,6 @@ sigma_final = tf.nn.softplus(sigma_raw).numpy()
 gamma_final = tf.nn.softplus(gamma_raw).numpy()
 print(f"σ (incubation rate) = {sigma_final:.4f}")
 print(f"γ (recovery rate) = {gamma_final:.4f}")
-
-# Print final learned initial conditions
-S0_final = tf.nn.sigmoid(S0_raw).numpy()
-E0_final = tf.nn.sigmoid(E0_raw).numpy()
-I0_final = tf.nn.sigmoid(I0_raw).numpy()
-R0_final = tf.nn.sigmoid(R0_raw).numpy()
-total_final = S0_final + E0_final + I0_final + R0_final
-print(f"\nFinal learned initial conditions:")
-print(f"S(0) = {S0_final/total_final:.4f}")
-print(f"E(0) = {E0_final/total_final:.4f}")
-print(f"I(0) = {I0_final/total_final:.4f}")
-print(f"R(0) = {R0_final/total_final:.4f}")
 
 ### Save model
 model.save('seir_pinn_model.keras')
