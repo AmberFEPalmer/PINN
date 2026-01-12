@@ -41,7 +41,6 @@ def create_pinn_model():
     x = Dense(128, activation='tanh')(x)
     x = Dense(128, activation='tanh')(x)
     x = Dense(128, activation='tanh')(x)
-    x = Dense(128, activation='tanh')(x)
     
     ### Hidden layer 4 = 64 neurons, tanh activation       
     x = Dense(64, activation='tanh')(x)
@@ -230,8 +229,8 @@ plt.show()
 t_plot = np.linspace(0, 1, 500).reshape(-1, 1)
 t_plot_tensor = tf.convert_to_tensor(t_plot, dtype=tf.float32)
 
-_, _, _, _, beta_pred = model(t_plot_tensor)
-beta_pred_numpy = beta_pred().flatten()
+_, _, _, _, beta = model(t_plot_tensor)
+beta_pred_numpy = beta().flatten()
 
 plt.plot(t_plot, beta_pred_numpy, 'g-', linewidth=2)
 plt.xlabel('normalised time')
