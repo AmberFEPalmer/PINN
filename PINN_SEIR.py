@@ -226,17 +226,16 @@ plt.tight_layout()
 plt.show()
 
 ### Plotting beta over time
-t_plot = np.linspace(0, 1, 500).reshape(-1, 1)
-t_plot_tensor = tf.convert_to_tensor(t_plot, dtype=tf.float32)
+t_plot = np.linspace(0.0, 1.0, 500)
 
-_, _, _, _, beta = model(t_plot_tensor)
-beta_pred_numpy = beta().flatten()
+t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1, 1), dtype=tf.float32)
 
-plt.plot(t_plot, beta_pred_numpy, 'g-', linewidth=2)
+_, _, _, _, beta = model.predict(t_plot_tensor)
+
+plt.plot(t_plot, beta.flatten(), 'g-', linewidth=2)
 plt.xlabel('normalised time')
-plt.ylabel('Bt')
+plt.ylabel('β(t)')
 plt.grid(True)
-plt.tight_layout()
 plt.show()
 
 ### Model evaluation - mean absolute error
