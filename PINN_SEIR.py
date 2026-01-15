@@ -13,9 +13,9 @@ from tensorflow.keras.optimizers import Adam
 
 ### Load preprocessed data (from COVID_Data.py script)
 ### These data are arrays
-t_data = np.load("data/t_data_2020.npy")       ### time points 
-I_data = np.load("data/I_data_2020.npy")       ### observed infections
-t_col  = np.load("data/t_col.npy")        ### collocation points for physics loss
+t_data = np.load("Implement_PINN/data/t_data_2020.npy")       ### time points 
+I_data = np.load("Implement_PINN/data/I_data_2020.npy")       ### observed infections
+t_col  = np.load("Implement_PINN/data/t_col.npy")        ### collocation points for physics loss
 
 ### Store the max time for scaling
 t_max = t_data.max()
@@ -213,6 +213,7 @@ plt.title('Training Loss Over Time')
 plt.yscale('log')  
 plt.grid(True)
 plt.show()
+plt.savefig('PINN_training_loss.png')
 
 # Plot infected compartment vs data
 plt.plot(t_test, I_pred, 'b-', label='I (predicted)', linewidth=2)
@@ -224,6 +225,7 @@ plt.legend()
 plt.grid(True)
 plt.tight_layout()
 plt.show()
+plt.savefig('Infected_compartment_vs_data.png')
 
 ### Plotting beta over time
 t_plot = np.linspace(0.0, 1.0, 500)
@@ -237,6 +239,7 @@ plt.xlabel('normalised time')
 plt.ylabel('β(t)')
 plt.grid(True)
 plt.show()
+plt.savefig('Beta_over_time.png')
 
 ### Model evaluation - mean absolute error
 mae = tf.keras.losses.MeanAbsoluteError()
