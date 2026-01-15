@@ -13,9 +13,9 @@ from tensorflow.keras.optimizers import Adam
 
 ### Load preprocessed data (from COVID_Data.py script)
 ### These data are arrays
-t_data = np.load("Implement_PINN/data/t_data_2020.npy")       ### time points 
-I_data = np.load("Implement_PINN/data/I_data_2020.npy")       ### observed infections
-t_col  = np.load("Implement_PINN/data/t_col.npy")        ### collocation points for physics loss
+t_data = np.load("data/t_data_2020.npy")       ### time points 
+I_data = np.load("data/I_data_2020.npy")       ### observed infections
+t_col  = np.load("data/t_col.npy")        ### collocation points for physics loss
 
 ### Store the max time for scaling
 t_max = t_data.max()
@@ -54,7 +54,7 @@ def create_pinn_model():
 
     ### Time-varying beta (must be positive)
     ### Following what was done in Qian et al. 2025 paper
-    beta = Dense(1, activation='tanh', name='beta')(x)  
+    beta = Dense(1, activation='softplus', name='beta')(x)  
 
     ### Create the model -> inputs = time, outputs = SEIR compartments
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
