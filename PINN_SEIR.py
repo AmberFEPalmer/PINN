@@ -11,50 +11,46 @@ from tensorflow.keras.optimizers import Adam
 ### code from seminal paper https://github.com/maziarraissi/PINNs
 ### https://www.tensorflow.org/tutorials/customization/basics
 
-### Load preprocessed data (from COVID_Data.py script)
-### These data are arrays
-t_data = np.load("data/t_data_2020.npy")       ### time points 
-I_data = np.load("data/I_data_2020.npy")       ### observed infections
-t_col  = np.load("data/t_col.npy")        ### collocation points for physics loss
-
+### Load preprocessed data as arrays (from COVID_Data.py script)
+t_data = np.load("data/t_data_2020.npy")     
 ### Store the max time for scaling
 t_max = t_data.max()
+I_data = np.load("data/I_data_2020.npy")      
+t_col  = np.load("data/t_col.npy")       
 
-### Convert to TensorFlow tensors (so they can be used for model training)
-### tensor = multi-dimensional list of numbers
+### Convert to arrays Tensors (multi-dimensional list of numbers)
 t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
 I_tensor = tf.convert_to_tensor(I_data, dtype=tf.float32)
 
-# Create collocation points across full range
+# Create collocation points across the full range of the data
 t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
 
 ### Define PINN
 def create_pinn_model():
-    ### Input layer - time (shape = 1 because time is 1D)
+    ### Input layer = time 
     t_input = Input(shape=(1,), name='time_input')
     
-    ### Hidden layer 1 = 64 neurons, tanh activation (tanh = non-linear + smooth)
+    ### 3 Hidden layers, 64 50 neurons each , tanh activation (tanh = non-linear + smooth)
     ### tanh outputs values in [-1,1]
-    x = Dense(64, activation='tanh')(t_input)
-    
-    ### Hidden layers 2 + 3 + 4 + 5 = 128 neurons, tanh activation  
-    x = Dense(128, activation='tanh')(x)
-    x = Dense(128, activation='tanh')(x)
-    x = Dense(128, activation='tanh')(x)
-    
-    ### Hidden layer 4 = 64 neurons, tanh activation       
-    x = Dense(64, activation='tanh')(x)
+    ### Same architecture as used in Qian et al. 2025
+    x = Dense(50, activation='tanh')(x)
+    x = Dense(50, activation='tanh')(x)
+    x = Dense(50, activation='tanh')(x)
     
     ### Output layers for S, E, I, R
-    ### sigmoid outputs variables in [0, 1]
+    ### Sigmoid outputs variables in [0, 1]
     S = Dense(1, activation='sigmoid', name='S')(x)
     E = Dense(1, activation='sigmoid', name='E')(x)
     I = Dense(1, activation='sigmoid', name='I')(x)
     R = Dense(1, activation='sigmoid', name='R')(x)
 
-    ### Time-varying beta (must be positive)
-    ### Following what was done in Qian et al. 2025 paper
-    beta = Dense(1, activation='softplus', name='beta')(x)  
+    ### Time-varying beta 
+    ### Same architecture as used in Qian et al. 2025 (3 hidden layers, 50 neurons)
+    ### beta = softplus activation -> allows it to be greater than 1
+    beta_hidden = Dense(50, activation = 'tanh')(x)
+    beta_hidden = Dense(50, activation = 'tanh')(x)
+    beta_hidden = Dense(50, activation = 'tanh')(x)
+    beta = Dense(1, activation='softplus', name='beta')(beta_hidden) 
 
     ### Create the model -> inputs = time, outputs = SEIR compartments
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
@@ -65,6 +61,7 @@ model = create_pinn_model()
 model.summary()
 
 ### Define initial conditions
+### TODO - do i need this if im not doing an initial conditon loss??
 S0 = tf.constant(0.9, dtype=tf.float32)
 E0 = tf.constant(0.05, dtype=tf.float32)
 I0 = tf.constant(0.05, dtype=tf.float32)
@@ -73,7 +70,7 @@ R0 = tf.constant(0.0, dtype=tf.float32)
 ### Define physics informed loss
 def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
 
-### Apply softplus to ensure positive parameters
+### Apply softplus to parameters to ensure they remain positive
     sigma = tf.nn.softplus(sigma_raw)
     gamma = tf.nn.softplus(gamma_raw)
 
@@ -102,7 +99,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
         S, E, I, R, beta = model(t_col)
         
     ### Compute derivatives e.g. dS/dt
-    ### Scale derivatives because time is normalised
+    ### Derivatives are scaled because time is normalised
     scale_factor = tf.constant(t_data.max(), dtype = tf.float32)
     dS_dt = tape.gradient(S, t_col) * scale_factor 
     dE_dt = tape.gradient(E, t_col) * scale_factor 
@@ -197,14 +194,9 @@ gamma_final = tf.nn.softplus(gamma_raw).numpy()
 print(f"σ (incubation rate) = {sigma_final:.4f}")
 print(f"γ (recovery rate) = {gamma_final:.4f}")
 
-### Save model
-model.save('seir_pinn_model.keras')
-print("\nModel saved as 'seir_pinn_model.keras'")
-
+### Plot training loss
 t_test = t_data  
 _, _, I_pred, _, _ = model(t_tensor)
-
-### Plot training loss
 plt.figure(figsize=(10, 8))
 plt.plot(train_loss_record)
 plt.xlabel('Iteration')
@@ -215,7 +207,7 @@ plt.grid(True)
 plt.show()
 plt.savefig('PINN_training_loss.png')
 
-# Plot infected compartment vs data
+### Plot infected compartment vs data
 plt.plot(t_test, I_pred, 'b-', label='I (predicted)', linewidth=2)
 plt.plot(t_data, I_data, color='red', label='I (observed)', linewidth=2)
 plt.xlabel('Normalized Time')
@@ -227,13 +219,10 @@ plt.tight_layout()
 plt.show()
 plt.savefig('Infected_compartment_vs_data.png')
 
-### Plotting beta over time
+### Plot beta over time
 t_plot = np.linspace(0.0, 1.0, 500)
-
 t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1, 1), dtype=tf.float32)
-
 _, _, _, _, beta = model.predict(t_plot_tensor)
-
 plt.plot(t_plot, beta.flatten(), 'g-', linewidth=2)
 plt.xlabel('normalised time')
 plt.ylabel('β(t)')
