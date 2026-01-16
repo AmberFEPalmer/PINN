@@ -33,9 +33,11 @@ def create_pinn_model():
     ### 3 Hidden layers, 64 50 neurons each , tanh activation (tanh = non-linear + smooth)
     ### tanh outputs values in [-1,1]
     ### Same architecture as used in Qian et al. 2025
-    x = Dense(50, activation='tanh')(x)
-    x = Dense(50, activation='tanh')(x)
-    x = Dense(50, activation='tanh')(x)
+    x = Dense(64, activation='tanh')(t_input)
+    x = Dense(128, activation='tanh')(x)
+    x = Dense(128, activation='tanh')(x)
+    x = Dense(128, activation='tanh')(x)
+    x = Dense(64, activation='tanh')(x)
     
     ### Output layers for S, E, I, R
     ### Sigmoid outputs variables in [0, 1]
@@ -138,7 +140,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1000.0*data_loss + 1.0*physics_loss 
+    total_loss = 1000.0*data_loss 
     
     return total_loss
 
