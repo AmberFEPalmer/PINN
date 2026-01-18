@@ -8,7 +8,11 @@ seir_all_compartments.png
 state_net.keras
 *.DS_Store
 COVID_Data.py
+PDE.py
+PINN_SEIR.ipynb
 COVID_Data_all_times.py
+COVID_Data_years.py
+split_covid_data_by_month.py
 PINN.py
 PINN_example_first_order.py
 covid_all_time.png

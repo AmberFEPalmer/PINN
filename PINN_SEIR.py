@@ -13,10 +13,13 @@ from tensorflow.keras.optimizers import Adam
 ### https://www.tensorflow.org/tutorials/customization/basics
 
 ### Load preprocessed data as arrays (from COVID_Data.py script)
-t_data = np.load("data/t_data_2020.npy")     
+t_data = np.load("data/t_data_2020-03.npy")     
 ### Store the max time for scaling
 t_max = t_data.max()
-I_data = np.load("data/I_data_2020.npy")      
+I_data = np.load("data/I_data_2020-03.npy")    
+
+### Collocation points are random therefore collocation points are only created in split_covid_data_by_month.py
+### this works because time is normalised from 0-1 and the PINN is trained with this normalised time  
 t_col  = np.load("data/t_col.npy")       
 
 ### Train/test split
@@ -25,7 +28,9 @@ t_data = t_data[:N_obs].reshape(-1, 1)
 I_data = I_data.reshape(-1, 1)
 
 ### Generate training and testing data - takes first 80% of datasets
-split = int(0.8 * N_obs) 
+### 4 weeks of the year = 7.69% 
+### 100-7.69 = 92.31 = training data 
+split = int(0.9 * N_obs) 
 
 t_train = t_data[:split] ### take all elements from 0 up to "split"
 I_train = I_data[:split]
@@ -160,7 +165,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1000.0*data_loss + 10.0*physics_loss
+    total_loss = 1000.0*data_loss + 1.0*physics_loss
     
     return total_loss
 
@@ -247,8 +252,8 @@ I_test_np  = to_numpy_flat(I_test)
 ### Plot PINN training and forecasting
 plt.figure(figsize=(14, 6))
 plt.plot(t_data_np, I_pred_np,'b-', linewidth=2, label='I (PINN prediction)')
-plt.plot(t_train_np, I_train_np,'ro', markersize=2, label='I (observed – train)')
-plt.plot(t_test_np, I_test_np,'ko', markersize=2, label='I (observed – test)')
+plt.plot(t_train_np, I_train_np,'ro', linewidth=2, label='I (observed – train)')
+plt.plot(t_test_np, I_test_np,'ko', linewidth=2, label='I (observed – test)')
 plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Split')
 
 plt.xlabel('Normalized Time')
@@ -273,9 +278,12 @@ plt.savefig('Beta_over_time.png')
 
 ### Model evaluation - mean absolute error
 mae_test = tf.keras.losses.MeanAbsoluteError()(I_test, I_pred[split:]).numpy()
+print("Mean Absolute Error:", mae_test)
 
 ### Model evaluation - mean sqaured error
 mse_test = tf.keras.losses.MeanSquaredError()(I_test, I_pred[split:]).numpy()
+print("Mean Squared Error:", mse_test)
 
 ### Model evaluation - mean absolute percentage error
 mape_test = tf.keras.losses.MeanAbsolutePercentageError()(I_test, I_pred[split:]).numpy()
+print("Mean Absolute Percentage Error:", mape_test)
