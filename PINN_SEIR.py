@@ -7,6 +7,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 
 ### Main websites used 
+### https://i-systems.github.io/tutorial/KSNVE/220525/01_PINN.html
 ### https://vitalitylearning.medium.com/solving-a-first-order-ode-with-physics-informed-neural-networks-22e385f09d35
 ### code from seminal paper https://github.com/maziarraissi/PINNs
 ### https://www.tensorflow.org/tutorials/customization/basics
@@ -18,9 +19,29 @@ t_max = t_data.max()
 I_data = np.load("data/I_data_2020.npy")      
 t_col  = np.load("data/t_col.npy")       
 
-### Convert to arrays Tensors (multi-dimensional list of numbers)
-t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
-I_tensor = tf.convert_to_tensor(I_data, dtype=tf.float32)
+### Train/test split
+N_obs = len(I_data)
+t_data = t_data[:N_obs].reshape(-1, 1)
+I_data = I_data.reshape(-1, 1)
+
+### Generate training and testing data - takes first 80% of datasets
+split = int(0.8 * N_obs) 
+
+t_train = t_data[:split] ### take all elements from 0 up to "split"
+I_train = I_data[:split]
+
+t_test  = t_data[split:] ### take all elements from "split" to the end
+I_test  = I_data[split:]
+
+### Convert to tensors
+t_train_tensor = tf.convert_to_tensor(t_train, dtype=tf.float32)
+I_train_tensor = tf.convert_to_tensor(I_train, dtype=tf.float32)
+
+### Print number of testing and training samples + time range
+print(f"Training samples: {len(t_train)}")
+print(f"Testing samples: {len(t_test)}")
+print(f"Training time range: {t_train.min():.3f} to {t_train.max():.3f}")
+print(f"Testing time range: {t_test.min():.3f} to {t_test.max():.3f}")
 
 # Create collocation points across the full range of the data
 t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
@@ -50,8 +71,7 @@ def create_pinn_model():
     ### Same architecture as used in Qian et al. 2025 (3 hidden layers, 50 neurons)
     ### beta = softplus activation -> allows it to be greater than 1
     beta_hidden = Dense(50, activation = 'tanh')(x)
-    beta_hidden = Dense(50, activation = 'tanh')(x)
-    beta_hidden = Dense(50, activation = 'tanh')(x)
+    beta_hidden = Dense(50, activation = 'tanh')(beta_hidden)
     beta = Dense(1, activation='softplus', name='beta')(beta_hidden) 
 
     ### Create the model -> inputs = time, outputs = SEIR compartments
@@ -98,7 +118,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     ### https://www.tensorflow.org/api_docs/python/tf/GradientTape
     with tf.GradientTape(persistent=True) as tape:
         tape.watch(t_col)
-        S, E, I, R, beta = model(t_col)
+        S, E, I, R, beta = net(t_col)
         
     ### Compute derivatives e.g. dS/dt
     ### Derivatives are scaled because time is normalised
@@ -140,7 +160,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1000.0*data_loss 
+    total_loss = 1000.0*data_loss + 10.0*physics_loss
     
     return total_loss
 
@@ -171,33 +191,32 @@ t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 
 ### Training loop
 train_loss_record = []
+test_loss_record = []  
 
 print("Starting training...")
-for itr in range(60000):
+for itr in range(60000): ### 60000 iterations
     with tf.GradientTape() as tape:
-        train_loss = seir_ode_loss(t_col_tensor, t_data, I_data, model, 
-                                   sigma_raw, gamma_raw)
-    
+        ### Use training data only
+        train_loss = seir_ode_loss(t_col_tensor, t_train, I_train, model, sigma_raw, gamma_raw)
+   
     train_loss_record.append(train_loss.numpy())
-    
+   
     grad_w = tape.gradient(train_loss, trainable_vars)
     optm.apply_gradients(zip(grad_w, trainable_vars))
-    
-    if itr % 5000 == 0:
-        print(f"Iteration {itr}, Loss: {train_loss.numpy():.6f}")
+   
+    ### Evaluate model on the test set 
+    if itr % 100 == 0:
+        test_loss = seir_ode_loss(t_col_tensor, t_test, I_test, model, sigma_raw, gamma_raw)
+        test_loss_record.append(test_loss.numpy())
+   
+    if itr % 10000 == 0:
+        print(f"Iteration {itr}, Train Loss: {train_loss.numpy():.6f}, Test Loss: {test_loss.numpy():.6f}")
         sigma_current = tf.nn.softplus(sigma_raw).numpy()
         gamma_current = tf.nn.softplus(gamma_raw).numpy()
         print(f"σ={sigma_current:.4f}, γ={gamma_current:.4f}")
 
-print("\nTraining complete!")
-print(f"\nFinal learned parameters:")
-sigma_final = tf.nn.softplus(sigma_raw).numpy()
-gamma_final = tf.nn.softplus(gamma_raw).numpy()
-print(f"σ (incubation rate) = {sigma_final:.4f}")
-print(f"γ (recovery rate) = {gamma_final:.4f}")
-
 ### Plot training loss
-t_test = t_data  
+t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
 _, _, I_pred, _, _ = model(t_tensor)
 plt.figure(figsize=(10, 8))
 plt.plot(train_loss_record)
@@ -206,20 +225,40 @@ plt.ylabel('Loss')
 plt.title('Training Loss Over Time')
 plt.yscale('log')  
 plt.grid(True)
+plt.savefig('PINN_training_loss.png') ### savefig has to be before show
 plt.show()
-plt.savefig('PINN_training_loss.png')
 
-### Plot infected compartment vs data
-plt.plot(t_test, I_pred, 'b-', label='I (predicted)', linewidth=2)
-plt.plot(t_data, I_data, color='red', label='I (observed)', linewidth=2)
+### Make sure data shapes are compatible with matplotlib
+def to_numpy_flat(arr):
+    """Convert to numpy array and flatten, handling both numpy arrays and TF tensors"""
+    if hasattr(arr, 'numpy'):  
+        return arr.numpy().flatten()
+    else:  
+        return arr.flatten()
+
+### Make sure data shapes are compatible with matplotlib
+t_data_np  = to_numpy_flat(t_data)         
+I_pred_np  = to_numpy_flat(I_pred)
+t_train_np = to_numpy_flat(t_train)
+I_train_np = to_numpy_flat(I_train)
+t_test_np  = to_numpy_flat(t_test)
+I_test_np  = to_numpy_flat(I_test)
+
+### Plot PINN training and forecasting
+plt.figure(figsize=(14, 6))
+plt.plot(t_data_np, I_pred_np,'b-', linewidth=2, label='I (PINN prediction)')
+plt.plot(t_train_np, I_train_np,'ro', markersize=2, label='I (observed – train)')
+plt.plot(t_test_np, I_test_np,'ko', markersize=2, label='I (observed – test)')
+plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Split')
+
 plt.xlabel('Normalized Time')
 plt.ylabel('Infected (normalized)')
-plt.title('Infected Compartment vs Observed Data')
+plt.title('SEIR PINN: Training vs Forecasting')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
+plt.savefig('PINN_output.png')
 plt.show()
-plt.savefig('Infected_compartment_vs_data.png')
 
 ### Plot beta over time
 t_plot = np.linspace(0.0, 1.0, 500)
@@ -233,16 +272,10 @@ plt.show()
 plt.savefig('Beta_over_time.png')
 
 ### Model evaluation - mean absolute error
-mae = tf.keras.losses.MeanAbsoluteError()
-mae_value = mae(I_data, I_pred).numpy()
-print("Mean Absolute Error:", mae_value)
+mae_test = tf.keras.losses.MeanAbsoluteError()(I_test, I_pred[split:]).numpy()
 
 ### Model evaluation - mean sqaured error
-mse = tf.keras.losses.MeanSquaredError()
-mse_value = mse(I_data, I_pred).numpy()
-print("Mean Squared Error:", mse_value)
+mse_test = tf.keras.losses.MeanSquaredError()(I_test, I_pred[split:]).numpy()
 
 ### Model evaluation - mean absolute percentage error
-mape = tf.keras.losses.MeanAbsolutePercentageError()
-mape_value = mape(I_data, I_pred).numpy()
-print("Mean Absolute Percentage Error:", mape_value)
+mape_test = tf.keras.losses.MeanAbsolutePercentageError()(I_test, I_pred[split:]).numpy()
