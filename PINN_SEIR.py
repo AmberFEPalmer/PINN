@@ -13,10 +13,10 @@ from tensorflow.keras.optimizers import Adam
 ### https://www.tensorflow.org/tutorials/customization/basics
 
 ### Load preprocessed data as arrays (from COVID_Data.py script)
-t_data = np.load("data/t_data_2020-03.npy")     
+t_data = np.load("data/t_data_2020.npy")     
 ### Store the max time for scaling
 t_max = t_data.max()
-I_data = np.load("data/I_data_2020-03.npy")    
+I_data = np.load("data/I_data_2020.npy")    
 
 ### Collocation points are random therefore collocation points are only created in split_covid_data_by_month.py
 ### this works because time is normalised from 0-1 and the PINN is trained with this normalised time  
@@ -56,14 +56,13 @@ def create_pinn_model():
     ### Input layer = time 
     t_input = Input(shape=(1,), name='time_input')
     
-    ### 3 Hidden layers, 64 50 neurons each , tanh activation (tanh = non-linear + smooth)
+    ### 4 Hidden layers, 50 neurons each , tanh activation (tanh = non-linear + smooth)
     ### tanh outputs values in [-1,1]
     ### Same architecture as used in Qian et al. 2025
-    x = Dense(64, activation='tanh')(t_input)
-    x = Dense(128, activation='tanh')(x)
-    x = Dense(128, activation='tanh')(x)
-    x = Dense(128, activation='tanh')(x)
-    x = Dense(64, activation='tanh')(x)
+    x = Dense(50, activation='tanh')(t_input)
+    x = Dense(50, activation='tanh')(x)
+    x = Dense(50, activation='tanh')(x)
+    x = Dense(50, activation='tanh')(x)
     
     ### Output layers for S, E, I, R
     ### Sigmoid outputs variables in [0, 1]
@@ -73,9 +72,11 @@ def create_pinn_model():
     R = Dense(1, activation='sigmoid', name='R')(x)
 
     ### Time-varying beta 
-    ### Same architecture as used in Qian et al. 2025 (3 hidden layers, 50 neurons)
+    ### Same architecture as used in Qian et al. 2025 (4 hidden layers, 50 neurons)
     ### beta = softplus activation -> allows it to be greater than 1
     beta_hidden = Dense(50, activation = 'tanh')(x)
+    beta_hidden = Dense(50, activation = 'tanh')(beta_hidden)
+    beta_hidden = Dense(50, activation = 'tanh')(beta_hidden)
     beta_hidden = Dense(50, activation = 'tanh')(beta_hidden)
     beta = Dense(1, activation='softplus', name='beta')(beta_hidden) 
 
@@ -165,7 +166,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1000.0*data_loss + 1.0*physics_loss
+    total_loss = 100.0*data_loss + 1.0*physics_loss
     
     return total_loss
 
@@ -179,7 +180,7 @@ I0_fixed = I0
 R0_fixed = R0
 
 ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
-initial_lr = 0.0001
+initial_lr = 0.001
 lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
     initial_learning_rate=initial_lr,
     decay_steps=1000,
@@ -190,7 +191,7 @@ optm = Adam(learning_rate=lr_schedule)
 
 ### Collocation points for physics loss
 trainable_vars = model.trainable_variables + [sigma_raw, gamma_raw]
-n_collocation = 500
+n_collocation = 365
 t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
 t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 
@@ -199,7 +200,7 @@ train_loss_record = []
 test_loss_record = []  
 
 print("Starting training...")
-for itr in range(60000): ### 60000 iterations
+for itr in range(60000): ### 50000 iterations
     with tf.GradientTape() as tape:
         ### Use training data only
         train_loss = seir_ode_loss(t_col_tensor, t_train, I_train, model, sigma_raw, gamma_raw)
