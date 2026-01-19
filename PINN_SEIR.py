@@ -59,10 +59,10 @@ def create_pinn_model():
     ### 4 Hidden layers, 50 neurons each , tanh activation (tanh = non-linear + smooth)
     ### tanh outputs values in [-1,1]
     ### Same architecture as used in Qian et al. 2025
-    x = Dense(50, activation='tanh')(t_input)
-    x = Dense(50, activation='tanh')(x)
-    x = Dense(50, activation='tanh')(x)
-    x = Dense(50, activation='tanh')(x)
+    x = Dense(64, activation='tanh')(t_input)
+    x = Dense(64, activation='tanh')(x)
+    x = Dense(64, activation='tanh')(x)
+    x = Dense(64, activation='tanh')(x)
     
     ### Output layers for S, E, I, R
     ### Sigmoid outputs variables in [0, 1]
@@ -74,10 +74,10 @@ def create_pinn_model():
     ### Time-varying beta 
     ### Same architecture as used in Qian et al. 2025 (4 hidden layers, 50 neurons)
     ### beta = softplus activation -> allows it to be greater than 1
-    beta_hidden = Dense(50, activation = 'tanh')(x)
-    beta_hidden = Dense(50, activation = 'tanh')(beta_hidden)
-    beta_hidden = Dense(50, activation = 'tanh')(beta_hidden)
-    beta_hidden = Dense(50, activation = 'tanh')(beta_hidden)
+    beta_hidden = Dense(64, activation = 'tanh')(x)
+    beta_hidden = Dense(64, activation = 'tanh')(beta_hidden)
+    beta_hidden = Dense(64, activation = 'tanh')(beta_hidden)
+    beta_hidden = Dense(64, activation = 'tanh')(beta_hidden)
     beta = Dense(1, activation='softplus', name='beta')(beta_hidden) 
 
     ### Create the model -> inputs = time, outputs = SEIR compartments
@@ -166,7 +166,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 100.0*data_loss + 1.0*physics_loss
+    total_loss = 1000.0*data_loss + 0.1*physics_loss
     
     return total_loss
 
@@ -180,12 +180,13 @@ I0_fixed = I0
 R0_fixed = R0
 
 ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
+### learning rate scheduler added (not in original paper)
 initial_lr = 0.001
 lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
     initial_learning_rate=initial_lr,
-    decay_steps=1000,
+    decay_steps=3000,
     decay_rate=0.95,
-    staircase=True
+    staircase=False
 )
 optm = Adam(learning_rate=lr_schedule)
 
@@ -200,7 +201,7 @@ train_loss_record = []
 test_loss_record = []  
 
 print("Starting training...")
-for itr in range(60000): ### 50000 iterations
+for itr in range(70000): ### 70000 iterations
     with tf.GradientTape() as tape:
         ### Use training data only
         train_loss = seir_ode_loss(t_col_tensor, t_train, I_train, model, sigma_raw, gamma_raw)
@@ -253,8 +254,8 @@ I_test_np  = to_numpy_flat(I_test)
 ### Plot PINN training and forecasting
 plt.figure(figsize=(14, 6))
 plt.plot(t_data_np, I_pred_np,'b-', linewidth=2, label='I (PINN prediction)')
-plt.plot(t_train_np, I_train_np,'ro', linewidth=2, label='I (observed – train)')
-plt.plot(t_test_np, I_test_np,'ko', linewidth=2, label='I (observed – test)')
+plt.plot(t_train_np, I_train_np,'r-', linewidth=2, label='I (observed – train)')
+plt.plot(t_test_np, I_test_np,'r-', linewidth=2, label='I (observed – test)')
 plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Split')
 
 plt.xlabel('Normalized Time')
