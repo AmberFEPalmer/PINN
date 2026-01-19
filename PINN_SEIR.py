@@ -171,8 +171,9 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     return total_loss
 
 ### Define parameters 
-sigma_raw = tf.Variable(0.2, dtype=tf.float32, name='sigma_raw')
-gamma_raw = tf.Variable(0.2, dtype=tf.float32, name='gamma_raw')
+### Qian et al. 2025
+sigma_raw = tf.constant(0.25, dtype=tf.float32, name='sigma_raw')
+gamma_raw = tf.constant(0.25, dtype=tf.float32, name='gamma_raw')
 
 S0_fixed = S0
 E0_fixed = E0
