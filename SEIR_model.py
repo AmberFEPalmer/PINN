@@ -9,13 +9,13 @@ import pandas as pd
 E0 = 0 
 I0 = 1
 R0 = 0
-S0 = 560000
-days = 337
+S0 = 10000
+days = 20
 
 ### Parameters
-sigma = 0.5
+sigma = 0.3
 gamma = 0.3
-beta = 0.2
+beta = 0.1
 
 ### SEIR equations
 def ode_model(t, y, beta, sigma, gamma):
@@ -46,7 +46,20 @@ def run_seir(days, S0, E0, I0, R0, beta, sigma, gamma):
     S, E, I, R = sol.y
     return tspan, S, E, I, R  
 
+### Run simulation
 t, S, E, I, R = run_seir(days, S0, E0, I0, R0, beta, sigma, gamma)
+
+N = S0 + E0 + I0 + R0
+S_norm = S/N
+E_norm = E/N
+I_norm = I/N
+R_norm = R/N
+
+### Print values for t and I 
+print(t)
+print(I)
+print(t, I)
+type(t)
 
 ### Plot results from SEIR model
 plt.figure(figsize=(10, 6))
@@ -60,23 +73,10 @@ plt.xlabel("Days")
 plt.ylabel("Number of people in each compartment")
 plt.show()
 
-### Import the COVID-19 data
-t_data = np.load("data/t_data_raw_2020.npy")       ### time points 
-I_data = np.load("data/I_data_raw_2020.npy") 
+### Normalise time for PINN 
+t_norm = t / t.max()
 
-plt.figure()
-plt.plot(t_data, I_data)
-plt.show()
-
-### Plot results from SEIR model with the data
-plt.figure(figsize=(10, 6))
-plt.plot(t, S)
-plt.plot(t, E)
-plt.plot(t, I)
-plt.plot(t, R)
-plt.plot(t, t_data)
-plt.legend(["S", "E", "I", "R", "data"])
-plt.title("SEIR model with data")
-plt.xlabel("Days")
-plt.ylabel("Number of people in each compartment")
-plt.show()
+### Export SEIR results to a csv file
+SEIR_data = pd.DataFrame({"time": t_norm,"I": I_norm,})
+print(SEIR_data)
+SEIR_data.to_csv("SEIR_results.csv", index=False)
