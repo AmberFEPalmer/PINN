@@ -6,22 +6,15 @@ from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import regularizers
+import pandas as pd
 
-### Main websites used 
-### https://i-systems.github.io/tutorial/KSNVE/220525/01_PINN.html
-### https://vitalitylearning.medium.com/solving-a-first-order-ode-with-physics-informed-neural-networks-22e385f09d35
-### code from seminal paper https://github.com/maziarraissi/PINNs
-### https://www.tensorflow.org/tutorials/customization/basics
+data = pd.read_csv("SEIR_results.csv")   
+t_data = data["time"].values.reshape(-1, 1)
+I_data = data["I"].values.reshape(-1, 1)    
 
-### Load preprocessed data as arrays (from COVID_Data.py script)
-t_data = np.load("data/t_data_2020.npy")     
-### Store the max time for scaling
-t_max = t_data.max()
-I_data = np.load("data/I_data_2020.npy")    
-
-### Collocation points are random therefore collocation points are only created in split_covid_data_by_month.py
-### this works because time is normalised from 0-1 and the PINN is trained with this normalised time  
-t_col  = np.load("data/t_col.npy")       
+### Normalise time
+t_min, t_max = t_data.min(), t_data.max()
+t_data = (t_data - t_min) / (t_max - t_min)
 
 ### Train/test split
 N_obs = len(I_data)
@@ -29,9 +22,7 @@ t_data = t_data[:N_obs].reshape(-1, 1)
 I_data = I_data.reshape(-1, 1)
 
 ### Generate training and testing data - takes first 80% of datasets
-### 4 weeks of the year = 7.69% 
-### 100-7.69 = 92.31 = training data 
-split = int(0.9 * N_obs) 
+split = int(0.8 * N_obs) 
 
 t_train = t_data[:split] ### take all elements from 0 up to "split"
 I_train = I_data[:split]
@@ -48,9 +39,6 @@ print(f"Training samples: {len(t_train)}")
 print(f"Testing samples: {len(t_test)}")
 print(f"Training time range: {t_train.min():.3f} to {t_train.max():.3f}")
 print(f"Testing time range: {t_test.min():.3f} to {t_test.max():.3f}")
-
-# Create collocation points across the full range of the data
-t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
 
 ### Define PINN
 ### L2 regularisation for hidden layers 
@@ -92,9 +80,10 @@ model = create_pinn_model()
 model.summary()
 
 ### Define initial conditions
-S0 = tf.constant(0.9, dtype=tf.float32)
-E0 = tf.constant(0.05, dtype=tf.float32)
-I0 = tf.constant(0.05, dtype=tf.float32)
+### TODO - do i need this if im not doing an initial condition loss??
+S0 = tf.constant(10000/10001, dtype=tf.float32)
+E0 = tf.constant(0.0, dtype=tf.float32)
+I0 = tf.constant(1/10001, dtype=tf.float32)
 R0 = tf.constant(0.0, dtype=tf.float32)
 
 ### Define physics informed loss
@@ -131,9 +120,8 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     del tape
 
     ### SEIR equations
-    N = 1.0
-    dS_dt_true = -beta * S * I / N
-    dE_dt_true = beta * S * I / N - sigma * E
+    dS_dt_true = -beta * S * I 
+    dE_dt_true = beta * S * I - sigma * E
     dI_dt_true = sigma * E - gamma * I
     dR_dt_true = gamma * I
     
@@ -161,14 +149,14 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 100.0*data_loss + 0.1*physics_loss
+    total_loss = 100.0*data_loss + 1.0*physics_loss + 1.0*IC_loss
     
     return total_loss
 
 ### Define parameters which don't vary over time
 ### Following what was done in Qian et al. 2025
-sigma_raw = tf.constant(0.25, dtype=tf.float32, name='sigma_raw')
-gamma_raw = tf.constant(0.25, dtype=tf.float32, name='gamma_raw')
+sigma_raw = tf.constant(0.3, dtype=tf.float32, name='sigma_raw')
+gamma_raw = tf.constant(0.3, dtype=tf.float32, name='gamma_raw')
 
 S0_fixed = S0
 E0_fixed = E0
@@ -267,7 +255,7 @@ plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Spl
 
 plt.xlabel('Normalized Time')
 plt.ylabel('Infected (normalized)')
-plt.title('SEIR PINN: Training vs Forecasting')
+plt.title('SEIR PINN on simulated data: Training vs Forecasting')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
