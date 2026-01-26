@@ -161,7 +161,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 100.0*data_loss + 0.1*physics_loss
+    total_loss = 1000.0*data_loss + 0.1*physics_loss
     
     return total_loss
 
