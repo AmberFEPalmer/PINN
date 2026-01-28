@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import random
-from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.layers import Dense, Input, Lambda
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import regularizers
@@ -34,12 +34,6 @@ I_test  = I_data[split:]
 t_train_tensor = tf.convert_to_tensor(t_train, dtype=tf.float32)
 I_train_tensor = tf.convert_to_tensor(I_train, dtype=tf.float32)
 
-### Print number of testing and training samples + time range
-print(f"Training samples: {len(t_train)}")
-print(f"Testing samples: {len(t_test)}")
-print(f"Training time range: {t_train.min():.3f} to {t_train.max():.3f}")
-print(f"Testing time range: {t_test.min():.3f} to {t_test.max():.3f}")
-
 ### Define PINN
 ### L2 regularisation for hidden layers 
 ### https://keras.io/api/layers/regularizers/
@@ -47,31 +41,26 @@ print(f"Testing time range: {t_test.min():.3f} to {t_test.max():.3f}")
 def create_pinn_model():
     ### Input layer = time 
     t_input = Input(shape=(1,), name='time_input')
-    
-    ### 4 Hidden layers, 64 neurons each , tanh activation (tanh = non-linear + smooth)
-    ### tanh outputs values in [-1,1]
-    ### Milleovi et al. 2024 - tanh for hidden layers, sigmoid for output
-    x = Dense(64, activation='tanh', kernel_regularizer=regularizers.l2(1e-4))(t_input)
-    x = Dense(64, activation='tanh', kernel_regularizer=regularizers.l2(1e-4))(x)
-    x = Dense(64, activation='tanh', kernel_regularizer=regularizers.l2(1e-4))(x)
-    x = Dense(64, activation='tanh', kernel_regularizer=regularizers.l2(1e-4))(x)
-    
-    ### Output layers for S, E, I, R
-    ### Sigmoid outputs variables in [0, 1]
-    S = Dense(1, activation='sigmoid', name='S')(x)
-    E = Dense(1, activation='sigmoid', name='E')(x)
-    I = Dense(1, activation='sigmoid', name='I')(x)
-    R = Dense(1, activation='sigmoid', name='R')(x)
+
+    ### 3 Hidden layers, 50 neurons each , tanh activation (tanh = non-linear + smooth)
+    ### 3 hidden layers with 50 neurons to match Qian et al. 2025
+    x_seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
+    x_seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(x_seir)
+    x_seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(x_seir)
+
+    ### SEIR outputs 
+    S = Dense(1, activation='sigmoid', name='S')(x_seir)
+    E = Dense(1, activation='sigmoid', name='E')(x_seir)
+    I = Dense(1, activation='sigmoid', name='I')(x_seir)
+    R = Dense(1, activation='sigmoid', name='R')(x_seir)
 
     ### Time-varying beta 
     ### beta = softplus activation -> allows it to be greater than 1
-    beta_hidden = Dense(64, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(x)
-    beta_hidden = Dense(64, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(beta_hidden)
-    beta_hidden = Dense(64, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(beta_hidden)
-    beta_hidden = Dense(64, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(beta_hidden)
+    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(t_input)
+    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(beta_hidden)
+    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(beta_hidden)
     beta = Dense(1, activation='softplus', name='beta')(beta_hidden) 
 
-    ### Create the model -> inputs = time, outputs = SEIR compartments and beta
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
     return model
 
@@ -80,7 +69,6 @@ model = create_pinn_model()
 model.summary()
 
 ### Define initial conditions
-### TODO - do i need this if im not doing an initial condition loss??
 S0 = tf.constant(10000/10001, dtype=tf.float32)
 E0 = tf.constant(0.0, dtype=tf.float32)
 I0 = tf.constant(1/10001, dtype=tf.float32)
@@ -92,7 +80,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
 ### Apply softplus to parameters to ensure they remain positive
     sigma = tf.nn.softplus(sigma_raw)
     gamma = tf.nn.softplus(gamma_raw)
-
+    
     ### if t_col is a 1D array it is reshaped to a column vector
     if len(t_col.shape) == 1:t_col = tf.reshape(t_col, (-1, 1))
     
@@ -143,13 +131,17 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
         tf.square(I_0 - I0_fixed) +
         tf.square(R_0 - R0_fixed) )
     
+    ### constrain SEIR equations to equal 1
+    S, E, I, R, beta = net(t_col)
+    conservation_loss = tf.reduce_mean(tf.square(S + E + I + R - 1.0))
+    
     ### Data loss 
     t_data_normalized = t_data_loss 
     _, _, I_pred, _, _ = net(t_data_normalized)
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0*data_loss + 0.1*IC_loss + 0.00001*physics_loss
+    total_loss = 1.0*physics_loss +10.0*data_loss + 5.0*IC_loss + 1.0*conservation_loss
     
     return total_loss
 
@@ -166,18 +158,18 @@ R0_fixed = R0
 ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
 ### learning rate scheduler added (not in original paper)
 initial_lr = 0.001
-lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=initial_lr,
-    decay_steps=6000,
-    decay_rate=0.95,
-    staircase=False
+lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
+    boundaries=[20000, 40000],  # steps
+    values=[0.001, 0.0005, 0.0001]
 )
 optm = Adam(learning_rate=lr_schedule)
 
 ### Collocation points for physics loss
-n_collocation = 365
-t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
-t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
+n_collocation = 500
+t_col_uniform = np.linspace(0, 1, n_collocation // 2)
+t_col_random = np.random.uniform(0, 1, n_collocation // 2)
+t_col = np.concatenate([t_col_uniform, t_col_random]).reshape(-1, 1)
+t_col_tensor = tf.convert_to_tensor(np.sort(t_col, axis=0), dtype=tf.float32)
 
 ### ensure all inputs are float32 for training
 t_train = tf.convert_to_tensor(t_train, dtype=tf.float32)
@@ -204,7 +196,7 @@ def test_step(t_col, t_data, I_data):
     return seir_ode_loss(t_col, t_data, I_data, model, sigma_raw, gamma_raw)
 
 print("Starting training...")
-for itr in range(60000):
+for itr in range(50000):
     train_loss = train_step(t_col_tensor, t_train, I_train)
     train_loss_record.append(float(train_loss))
 
