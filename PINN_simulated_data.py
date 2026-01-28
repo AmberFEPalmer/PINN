@@ -49,17 +49,17 @@ def create_pinn_model():
     x_seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(x_seir)
 
     ### SEIR outputs 
-    S = Dense(1, activation='sigmoid', name='S')(x_seir)
-    E = Dense(1, activation='sigmoid', name='E')(x_seir)
-    I = Dense(1, activation='sigmoid', name='I')(x_seir)
-    R = Dense(1, activation='sigmoid', name='R')(x_seir)
+    S = Dense(1, activation=None, name='S')(x_seir)
+    E = Dense(1, activation=None, name='E')(x_seir)
+    I = Dense(1, activation=None, name='I')(x_seir)
+    R = Dense(1, activation=None, name='R')(x_seir)
 
     ### Time-varying beta 
     ### beta = softplus activation -> allows it to be greater than 1
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(t_input)
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(beta_hidden)
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(beta_hidden)
-    beta = Dense(1, activation='softplus', name='beta')(beta_hidden) 
+    beta = Dense(1, activation=None, name='beta')(beta_hidden) 
 
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
     return model
@@ -99,6 +99,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     with tf.GradientTape(persistent=True) as tape:
         tape.watch(t_col)
         S, E, I, R, beta = net(t_col)
+        beta = tf.exp(beta)
         
     ### Compute derivatives e.g. dS/dt
     dS_dt = tape.gradient(S, t_col) 
@@ -114,11 +115,16 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     dR_dt_true = gamma * I
     
     ### Physics-informed loss - mean squared error
-    physics_loss = tf.reduce_mean(
-        tf.square(dS_dt - dS_dt_true) +
-        tf.square(dE_dt - dE_dt_true) +
-        tf.square(dI_dt - dI_dt_true) +
-        tf.square(dR_dt - dR_dt_true)
+    loss_S = tf.reduce_mean(tf.square(dS_dt - dS_dt_true))
+    loss_E = tf.reduce_mean(tf.square(dE_dt - dE_dt_true))
+    loss_I = tf.reduce_mean(tf.square(dI_dt - dI_dt_true))
+    loss_R = tf.reduce_mean(tf.square(dR_dt - dR_dt_true))
+
+    physics_loss = (
+        1.0 * loss_S +
+        1.0 * loss_E +
+        1.0 * loss_I +
+        1.0 * loss_R 
     )
 
     ### Initial condition loss (evaluate at t=0)
@@ -141,7 +147,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0*physics_loss +10.0*data_loss + 5.0*IC_loss + 1.0*conservation_loss
+    total_loss = 1.0*physics_loss +10000.0*data_loss + 50.0*IC_loss + 1.0*conservation_loss
     
     return total_loss
 
