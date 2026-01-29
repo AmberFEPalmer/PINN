@@ -104,20 +104,27 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     dR_dt = tape.gradient(R, t_col) 
     del tape
 
-    ### SEIR equations
-    days = 50
+    ### SEIR equations - these are in real time not normalised time
+    dS_dt_true = -beta * S * I
+    dE_dt_true = beta * S * I - sigma * E
+    dI_dt_true = sigma * E - gamma * I
+    dR_dt_true = gamma * I
+    
+    ### divide the gradients by T 
+    ### This ensures physics loss is on the same scale as data loss
+    days = 50.0
     T = tf.constant(days, dtype=tf.float32)
     
-    dS_dt_true = -T * beta * S * I
-    dE_dt_true = T * (beta * S * I - sigma * E)
-    dI_dt_true = T * (sigma * E - gamma * I)
-    dR_dt_true = T * (gamma * I)
+    dS_dt_real = dS_dt / T
+    dE_dt_real = dE_dt / T
+    dI_dt_real = dI_dt / T
+    dR_dt_real = dR_dt / T
     
     ### Physics-informed loss - mean squared error
-    loss_S = tf.reduce_mean(tf.square(dS_dt - dS_dt_true))
-    loss_E = tf.reduce_mean(tf.square(dE_dt - dE_dt_true))
-    loss_I = tf.reduce_mean(tf.square(dI_dt - dI_dt_true))
-    loss_R = tf.reduce_mean(tf.square(dR_dt - dR_dt_true))
+    loss_S = tf.reduce_mean(tf.square(dS_dt_real - dS_dt_true))
+    loss_E = tf.reduce_mean(tf.square(dE_dt_real - dE_dt_true))
+    loss_I = tf.reduce_mean(tf.square(dI_dt_real - dI_dt_true))
+    loss_R = tf.reduce_mean(tf.square(dR_dt_real - dR_dt_true))
 
     physics_loss = (
         0.1 * loss_S +
@@ -148,7 +155,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     ### Total loss
     ### the scale for physics loss is bigger than data loss which is why data loss needs to be much higher weighted
     ### (the derivatives are bigger numbers than the data)
-    total_loss = 10000.0 * data_loss + 10.0 * IC_loss +1.0*physics_loss + 1.0*conservation_loss
+    total_loss = 1.0 * data_loss + 1.0 * IC_loss +0.1*physics_loss + 1.0*conservation_loss
     
     return total_loss
 
