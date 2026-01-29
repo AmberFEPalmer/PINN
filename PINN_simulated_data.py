@@ -12,10 +12,6 @@ data = pd.read_csv("SEIR_results.csv")
 t_data = data["time"].values.reshape(-1, 1)
 I_data = data["I"].values.reshape(-1, 1)    
 
-### Normalise time
-t_min, t_max = t_data.min(), t_data.max()
-t_data = (t_data - t_min) / (t_max - t_min)
-
 ### Train/test split
 N_obs = len(I_data)
 t_data = t_data[:N_obs].reshape(-1, 1)
@@ -58,6 +54,7 @@ def create_pinn_model():
     ### beta = softplus activation -> allows it to be greater than 1
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
+
     beta = Dense(1, activation=None, name='beta')(beta_hidden) 
 
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
@@ -68,9 +65,9 @@ model = create_pinn_model()
 model.summary()
 
 ### Define initial conditions
-S0 = tf.constant(10000/10001, dtype=tf.float32)
+S0 = tf.constant(100/101, dtype=tf.float32)
 E0 = tf.constant(0.0, dtype=tf.float32)
-I0 = tf.constant(1/10001, dtype=tf.float32)
+I0 = tf.constant(1/101, dtype=tf.float32)
 R0 = tf.constant(0.0, dtype=tf.float32)
 
 ### Define physics informed loss
@@ -98,7 +95,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     with tf.GradientTape(persistent=True) as tape:
         tape.watch(t_col)
         S, E, I, R, beta = net(t_col)
-        beta = tf.nn.softplus(beta) + 0.01
+        beta = tf.nn.softplus(beta) 
         
     ### Compute derivatives e.g. dS/dt
     dS_dt = tape.gradient(S, t_col) 
@@ -108,11 +105,11 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     del tape
 
     ### SEIR equations
-    N = 10001.0
-    T = t_max
-
-    dS_dt_true = -T * beta * N * S * I
-    dE_dt_true = T * (beta * N * S * I - sigma * E)
+    days = 50
+    T = tf.constant(days, dtype=tf.float32)
+    
+    dS_dt_true = -T * beta * S * I
+    dE_dt_true = T * (beta * S * I - sigma * E)
     dI_dt_true = T * (sigma * E - gamma * I)
     dR_dt_true = T * (gamma * I)
     
@@ -149,7 +146,9 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 100.0 * data_loss + 1.0 * IC_loss +0.1*physics_loss + 1.0*conservation_loss
+    ### the scale for physics loss is bigger than data loss which is why data loss needs to be much higher weighted
+    ### (the derivatives are bigger numbers than the data)
+    total_loss = 10000.0 * data_loss + 10.0 * IC_loss +1.0*physics_loss + 1.0*conservation_loss
     
     return total_loss
 
@@ -166,18 +165,18 @@ R0_fixed = R0
 ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
 ### learning rate scheduler added (not in original paper)
 initial_lr = 0.001
-lr_schedule = tf.keras.optimizers.schedules.PiecewiseConstantDecay(
-    boundaries=[20000, 40000],  # steps
-    values=[0.001, 0.0005, 0.0001]
+lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate=initial_lr,
+    decay_steps=6000,
+    decay_rate=0.95,
+    staircase=False
 )
 optm = Adam(learning_rate=lr_schedule)
 
 ### Collocation points for physics loss
-n_collocation = 500
-t_col_uniform = np.linspace(0, 1, n_collocation // 2)
-t_col_random = np.random.uniform(0, 1, n_collocation // 2)
-t_col = np.concatenate([t_col_uniform, t_col_random]).reshape(-1, 1)
-t_col_tensor = tf.convert_to_tensor(np.sort(t_col, axis=0), dtype=tf.float32)
+n_collocation = 50
+t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
+t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 
 ### ensure all inputs are float32 for training
 t_train = tf.convert_to_tensor(t_train, dtype=tf.float32)

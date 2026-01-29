@@ -1,59 +1,52 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
+import matplotlib.pyplot as plt
 import pandas as pd
 
-### https://adventuresinpython.blogspot.com/2012/08/fitting-differential-equation-system-to.html
+# Initial conditions
+E0, I0, R0, S0 = 0, 1, 0, 100
+N = 101
+days = 50
 
-### Initial conditions
-E0 = 0 
-I0 = 1
-R0 = 0
-S0 = 10000
-days = 20
+# Parameters
+beta, sigma, gamma = 1, 0.3, 0.3
 
-### Parameters
-sigma = 0.3
-gamma = 0.3
-beta = 0.1
-
-### SEIR equations
-def ode_model(t, y, beta, sigma, gamma):
+# SEIR model
+def ode_model(t, y, beta, sigma, gamma, N):
     S, E, I, R = y
-    dSdt = -beta * S * I 
-    dEdt = beta * S * I - sigma * E
+    dSdt = -beta * S * I / N
+    dEdt = beta * S * I / N - sigma * E
     dIdt = sigma * E - gamma * I
     dRdt = gamma * I
     return [dSdt, dEdt, dIdt, dRdt]
 
-def ode_solver(t, initial_conditions, parameters):
+# ODE solver
+def ode_solver(t, initial_conditions, parameters, N):
     beta, sigma, gamma = parameters
-
-    sol = solve_ivp(
+    return solve_ivp(
         ode_model,
         (t[0], t[-1]),
-        [S0, E0, I0, R0],
-        args=(beta, sigma, gamma),
+        initial_conditions,
+        args=(beta, sigma, gamma, N),
         t_eval=t
     )
-    return sol
 
-### Run the model
-def run_seir(days, S0, E0, I0, R0, beta, sigma, gamma):
-    tspan = np.arange(0, days)
-    sol = ode_solver(tspan, [S0, E0, I0, R0], [beta, sigma, gamma])
-    
+# Run model
+def run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N):
+    t = np.linspace(0, days, days + 1)
+    sol = ode_solver(t, [S0, E0, I0, R0], [beta, sigma, gamma], N)
     S, E, I, R = sol.y
-    return tspan, S, E, I, R  
+    return t, S, E, I, R
 
-### Run simulation
-t, S, E, I, R = run_seir(days, S0, E0, I0, R0, beta, sigma, gamma)
+# Run simulation
+t, S, E, I, R = run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N)
 
+# Normalize
 N = S0 + E0 + I0 + R0
-S_norm = S/N
-E_norm = E/N
-I_norm = I/N
-R_norm = R/N
+S_norm = S / N
+E_norm = E / N
+I_norm = I / N
+R_norm = R / N
 
 ### Print values for t and I 
 print(t)
