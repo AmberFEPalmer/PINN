@@ -115,16 +115,16 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     days = 50.0
     T = tf.constant(days, dtype=tf.float32)
     
-    dS_dt_real = dS_dt / T
-    dE_dt_real = dE_dt / T
-    dI_dt_real = dI_dt / T
-    dR_dt_real = dR_dt / T
+    dS_dt_normalised = dS_dt / T
+    dE_dt_normalised = dE_dt / T
+    dI_dt_normalised = dI_dt / T
+    dR_dt_normalised = dR_dt / T
     
     ### Physics-informed loss - mean squared error
-    loss_S = tf.reduce_mean(tf.square(dS_dt_real - dS_dt_true))
-    loss_E = tf.reduce_mean(tf.square(dE_dt_real - dE_dt_true))
-    loss_I = tf.reduce_mean(tf.square(dI_dt_real - dI_dt_true))
-    loss_R = tf.reduce_mean(tf.square(dR_dt_real - dR_dt_true))
+    loss_S = tf.reduce_mean(tf.square(dS_dt_normalised - dS_dt_true))
+    loss_E = tf.reduce_mean(tf.square(dE_dt_normalised - dE_dt_true))
+    loss_I = tf.reduce_mean(tf.square(dI_dt_normalised - dI_dt_true))
+    loss_R = tf.reduce_mean(tf.square(dR_dt_normalised - dR_dt_true))
 
     physics_loss = (
         0.1 * loss_S +
