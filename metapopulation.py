@@ -78,13 +78,13 @@ plt.show()
 ### Normalise time for PINN 
 t_norm = sol.t / sol.t.max()
 
-### Normalise I for PINN
-I_norm = I_total / I_total.max()   # scale to 0-1
-
 ### Export metapopulation results to a csv file
 I_total = sol.y[1:-1, :].sum(axis=0) 
+
+### Normalise I for PINN
+I_norm = I_total / I_total.max()   # scale to 0-1
 
 metapopulation_data = pd.DataFrame({"time": t_norm,"I": I_norm,})
 
 print(metapopulation_data)
-metapopulation_data.to_csv("SEIR_results.csv", index=False)
+metapopulation_data.to_csv("metapopulation_results.csv", index=False)
