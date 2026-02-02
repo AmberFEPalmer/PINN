@@ -4,6 +4,8 @@ Python - Version 3.11.8
 Tensorflow - Version 2.20.0
 Keras - Version 3.12.0
 
+https://uob-my.sharepoint.com/:w:/r/personal/oc25003_bristol_ac_uk/_layouts/15/doc.aspx?sourcedoc=%7B7d68faec-1b7c-4574-adc9-99e50ff8ea03%7D&action=edit
+
 PINN files
 1. PINN_simulated_data.py = PINN tested on simulated SIR model
 2. metapopulation_PINN.py = PINN tested on metapopulation SIR model
