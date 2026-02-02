@@ -2,10 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import random
-from tensorflow.keras.layers import Dense, Input
+from tensorflow.keras.layers import Dense, Input, Lambda
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import regularizers
+import pandas as pd
 
 ### Main websites used 
 ### https://i-systems.github.io/tutorial/KSNVE/220525/01_PINN.html
@@ -14,10 +15,10 @@ from tensorflow.keras import regularizers
 ### https://www.tensorflow.org/tutorials/customization/basics
 
 ### Load preprocessed data as arrays (from COVID_Data.py script)
-t_data = np.load("data/t_data_2020.npy")     
+t_data = np.load("data/t_data_2020-03.npy")     
 ### Store the max time for scaling
 t_max = t_data.max()
-I_data = np.load("data/I_data_2020.npy")    
+I_data = np.load("data/I_data_2020-03.npy")    
 
 ### Collocation points are random therefore collocation points are only created in split_covid_data_by_month.py
 ### this works because time is normalised from 0-1 and the PINN is trained with this normalised time  
@@ -29,9 +30,7 @@ t_data = t_data[:N_obs].reshape(-1, 1)
 I_data = I_data.reshape(-1, 1)
 
 ### Generate training and testing data - takes first 80% of datasets
-### 4 weeks of the year = 7.69% 
-### 100-7.69 = 92.31 = training data 
-split = int(0.9 * N_obs) 
+split = int(0.8 * N_obs) 
 
 t_train = t_data[:split] ### take all elements from 0 up to "split"
 I_train = I_data[:split]
@@ -43,15 +42,6 @@ I_test  = I_data[split:]
 t_train_tensor = tf.convert_to_tensor(t_train, dtype=tf.float32)
 I_train_tensor = tf.convert_to_tensor(I_train, dtype=tf.float32)
 
-### Print number of testing and training samples + time range
-print(f"Training samples: {len(t_train)}")
-print(f"Testing samples: {len(t_test)}")
-print(f"Training time range: {t_train.min():.3f} to {t_train.max():.3f}")
-print(f"Testing time range: {t_test.min():.3f} to {t_test.max():.3f}")
-
-# Create collocation points across the full range of the data
-t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
-
 ### Define PINN
 ### L2 regularisation for hidden layers 
 ### https://keras.io/api/layers/regularizers/
@@ -59,31 +49,26 @@ t_col_tensor = tf.convert_to_tensor(t_col, dtype=tf.float32)
 def create_pinn_model():
     ### Input layer = time 
     t_input = Input(shape=(1,), name='time_input')
-    
-    ### 4 Hidden layers, 64 neurons each , tanh activation (tanh = non-linear + smooth)
-    ### tanh outputs values in [-1,1]
-    ### Milleovi et al. 2024 - tanh for hidden layers, sigmoid for output
-    x = Dense(64, activation='tanh', kernel_regularizer=regularizers.l2(1e-4))(t_input)
-    x = Dense(64, activation='tanh', kernel_regularizer=regularizers.l2(1e-4))(x)
-    x = Dense(64, activation='tanh', kernel_regularizer=regularizers.l2(1e-4))(x)
-    x = Dense(64, activation='tanh', kernel_regularizer=regularizers.l2(1e-4))(x)
-    
-    ### Output layers for S, E, I, R
-    ### Sigmoid outputs variables in [0, 1]
-    S = Dense(1, activation='sigmoid', name='S')(x)
-    E = Dense(1, activation='sigmoid', name='E')(x)
-    I = Dense(1, activation='sigmoid', name='I')(x)
-    R = Dense(1, activation='sigmoid', name='R')(x)
+
+    ### 3 Hidden layers, 50 neurons each , tanh activation (tanh = non-linear + smooth)
+    ### 3 hidden layers with 50 neurons to match Qian et al. 2025
+    x_seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
+    x_seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(x_seir)
+    x_seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(x_seir)
+
+    ### SEIR outputs 
+    S = Dense(1, activation=None, name='S')(x_seir)
+    E = Dense(1, activation=None, name='E')(x_seir)
+    I = Dense(1, activation=None, name='I')(x_seir)
+    R = Dense(1, activation=None, name='R')(x_seir)
 
     ### Time-varying beta 
     ### beta = softplus activation -> allows it to be greater than 1
-    beta_hidden = Dense(64, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(x)
-    beta_hidden = Dense(64, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(beta_hidden)
-    beta_hidden = Dense(64, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(beta_hidden)
-    beta_hidden = Dense(64, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-4))(beta_hidden)
-    beta = Dense(1, activation='softplus', name='beta')(beta_hidden) 
+    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
+    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
 
-    ### Create the model -> inputs = time, outputs = SEIR compartments and beta
+    beta = Dense(1, activation=None, name='beta')(beta_hidden) 
+
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
     return model
 
@@ -103,7 +88,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
 ### Apply softplus to parameters to ensure they remain positive
     sigma = tf.nn.softplus(sigma_raw)
     gamma = tf.nn.softplus(gamma_raw)
-
+    
     ### if t_col is a 1D array it is reshaped to a column vector
     if len(t_col.shape) == 1:t_col = tf.reshape(t_col, (-1, 1))
     
@@ -122,6 +107,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     with tf.GradientTape(persistent=True) as tape:
         tape.watch(t_col)
         S, E, I, R, beta = net(t_col)
+        beta = tf.nn.softplus(beta) 
         
     ### Compute derivatives e.g. dS/dt
     dS_dt = tape.gradient(S, t_col) 
@@ -130,19 +116,33 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     dR_dt = tape.gradient(R, t_col) 
     del tape
 
-    ### SEIR equations
-    N = 1.0
-    dS_dt_true = -beta * S * I / N
-    dE_dt_true = beta * S * I / N - sigma * E
+    ### SEIR equations - these are in real time not normalised time
+    dS_dt_true = -beta * S * I
+    dE_dt_true = beta * S * I - sigma * E
     dI_dt_true = sigma * E - gamma * I
     dR_dt_true = gamma * I
     
+    ### divide the gradients by T 
+    ### This ensures physics loss is on the same scale as data loss
+    days = 365.0
+    T = tf.constant(days, dtype=tf.float32)
+    
+    dS_dt_normalised = dS_dt / T
+    dE_dt_normalised = dE_dt / T
+    dI_dt_normalised = dI_dt / T
+    dR_dt_normalised = dR_dt / T
+    
     ### Physics-informed loss - mean squared error
-    physics_loss = tf.reduce_mean(
-        tf.square(dS_dt - dS_dt_true) +
-        tf.square(dE_dt - dE_dt_true) +
-        tf.square(dI_dt - dI_dt_true) +
-        tf.square(dR_dt - dR_dt_true)
+    loss_S = tf.reduce_mean(tf.square(dS_dt_normalised - dS_dt_true))
+    loss_E = tf.reduce_mean(tf.square(dE_dt_normalised - dE_dt_true))
+    loss_I = tf.reduce_mean(tf.square(dI_dt_normalised - dI_dt_true))
+    loss_R = tf.reduce_mean(tf.square(dR_dt_normalised - dR_dt_true))
+
+    physics_loss = (
+        0.1 * loss_S +
+        0.1 * loss_E +
+        1.0 * loss_I +
+        0.1 * loss_R 
     )
 
     ### Initial condition loss (evaluate at t=0)
@@ -155,20 +155,26 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
         tf.square(I_0 - I0_fixed) +
         tf.square(R_0 - R0_fixed) )
     
+    ### constrain SEIR equations to equal 1
+    S, E, I, R, beta = net(t_col)
+    conservation_loss = tf.reduce_mean(tf.square(S + E + I + R - 1.0))
+    
     ### Data loss 
     t_data_normalized = t_data_loss 
     _, _, I_pred, _, _ = net(t_data_normalized)
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1000.0*data_loss + 0.1*physics_loss
+    ### the scale for physics loss is bigger than data loss which is why data loss needs to be much higher weighted
+    ### (the derivatives are bigger numbers than the data)
+    total_loss = 1.0 * data_loss + 0.0 * IC_loss +0.1*physics_loss + 1.0*conservation_loss
     
     return total_loss
 
 ### Define parameters which don't vary over time
 ### Following what was done in Qian et al. 2025
-sigma_raw = tf.constant(0.25, dtype=tf.float32, name='sigma_raw')
-gamma_raw = tf.constant(0.25, dtype=tf.float32, name='gamma_raw')
+sigma_raw = tf.constant(0.3, dtype=tf.float32, name='sigma_raw')
+gamma_raw = tf.constant(0.3, dtype=tf.float32, name='gamma_raw')
 
 S0_fixed = S0
 E0_fixed = E0
@@ -216,7 +222,7 @@ def test_step(t_col, t_data, I_data):
     return seir_ode_loss(t_col, t_data, I_data, model, sigma_raw, gamma_raw)
 
 print("Starting training...")
-for itr in range(60000):
+for itr in range(500000):
     train_loss = train_step(t_col_tensor, t_train, I_train)
     train_loss_record.append(float(train_loss))
 
@@ -229,7 +235,7 @@ for itr in range(60000):
             f"Iteration {itr}, "
             f"Train Loss: {float(train_loss):.6f}, "
             f"Test Loss: {float(test_loss):.6f}"
-        )
+            )
 
 ### Plot training loss
 t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
@@ -267,7 +273,7 @@ plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Spl
 
 plt.xlabel('Normalized Time')
 plt.ylabel('Infected (normalized)')
-plt.title('SEIR PINN: Training vs Forecasting')
+plt.title('SEIR PINN on simulated data: Training vs Forecasting')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()

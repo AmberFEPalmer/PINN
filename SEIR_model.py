@@ -4,12 +4,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 # Initial conditions
-E0, I0, R0, S0 = 0, 1, 0, 100
-N = 101
-days = 50
+E0, I0, R0, S0 = 0, 1, 0, 100000
+N = 100001
+days = 365
 
 # Parameters
-beta, sigma, gamma = 1, 0.3, 0.3
+beta, sigma, gamma = 0.3, 0.1, 0.1
 
 # SEIR model
 def ode_model(t, y, beta, sigma, gamma, N):

@@ -65,9 +65,9 @@ model = create_pinn_model()
 model.summary()
 
 ### Define initial conditions
-S0 = tf.constant(100/101, dtype=tf.float32)
+S0 = tf.constant(100000/100001, dtype=tf.float32)
 E0 = tf.constant(0.0, dtype=tf.float32)
-I0 = tf.constant(1/101, dtype=tf.float32)
+I0 = tf.constant(1/100001, dtype=tf.float32)
 R0 = tf.constant(0.0, dtype=tf.float32)
 
 ### Define physics informed loss
@@ -112,7 +112,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     
     ### divide the gradients by T 
     ### This ensures physics loss is on the same scale as data loss
-    days = 50.0
+    days = 365.0
     T = tf.constant(days, dtype=tf.float32)
     
     dS_dt_normalised = dS_dt / T
@@ -181,7 +181,7 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 optm = Adam(learning_rate=lr_schedule)
 
 ### Collocation points for physics loss
-n_collocation = 50
+n_collocation = 365
 t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
 t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 

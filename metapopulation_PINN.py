@@ -56,8 +56,6 @@ def create_pinn_model():
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
 
-    beta = Dense(1, activation=None, name='beta')(beta_hidden) 
-
     model = Model(inputs=t_input, outputs=[S, I1, I2, I3, R])
     return model
 
@@ -151,7 +149,7 @@ def metapopulation_ode_loss(t_col, net, lam, gamma_list, S0_fixed, I0_fixed, R0_
     ### Total loss
     ### the scale for physics loss is bigger than data loss which is why data loss needs to be much higher weighted
     ### (the derivatives are bigger numbers than the data)
-    total_loss = 1.0 * data_loss + 1.0 * IC_loss +0.1*physics_loss + 1.0*conservation_loss
+    total_loss = 10.0 * data_loss + 1.0 * IC_loss +0.1*physics_loss + 1.0*conservation_loss
     
     return total_loss
 
