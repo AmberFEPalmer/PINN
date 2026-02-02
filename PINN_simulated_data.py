@@ -210,7 +210,7 @@ def test_step(t_col, t_data, I_data):
     return seir_ode_loss(t_col, t_data, I_data, model, sigma_raw, gamma_raw)
 
 print("Starting training...")
-for itr in range(50000):
+for itr in range(500000):
     train_loss = train_step(t_col_tensor, t_train, I_train)
     train_loss_record.append(float(train_loss))
 
@@ -278,6 +278,33 @@ plt.ylabel('β(t)')
 plt.grid(True)
 plt.show()
 plt.savefig('Beta_over_time.png')
+
+
+### Plot actual infection counts vs PINN predictions rather than normalised
+N = 101
+### Convert tensors to numpy arrays
+t_data_np  = to_numpy_flat(t_data)         
+I_pred_np  = to_numpy_flat(I_pred) * N
+I_data_np  = to_numpy_flat(I_data) * N         
+t_train_np = to_numpy_flat(t_train)
+I_train_np = to_numpy_flat(I_train) * N
+t_test_np  = to_numpy_flat(t_test)
+I_test_np  = to_numpy_flat(I_test) * N
+
+plt.figure(figsize=(12, 6))
+plt.plot(t_data_np, I_pred_np, 'b-', linewidth=2, label='PINN Predicted I')
+plt.plot(t_train_np, I_train_np, 'r-', linewidth=2, label='I (Observed – train)')
+plt.plot(t_test_np, I_test_np,'r-', linewidth=2, label='I (Observed – test)')
+plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Split')
+plt.xlabel('Time (days or normalized units)')
+plt.ylabel('Infected Individuals')
+plt.title('PINN Prediction vs Actual Infection Counts')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.savefig('PINN_vs_actual_infections_counts.png')
+plt.show()
+
 
 ### Model evaluation - mean absolute error
 mae_test = tf.keras.losses.MeanAbsoluteError()(I_test, I_pred[split:]).numpy()

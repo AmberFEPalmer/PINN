@@ -38,7 +38,7 @@ data['I_prev'] = data['newCases_smooth'].rolling(
 ).sum()
 
 ### Convert infection prevelance into a fraction of the population of the UK
-N = 69_000_000
+N = 56_000_000
 data['I_obs'] = data['I_prev'] / N
 
 ### Split into months
