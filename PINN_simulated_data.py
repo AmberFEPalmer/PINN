@@ -108,38 +108,29 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net):
     gamma = tf.constant(0.1, dtype=tf.float32, name='gamma')
     
     ### Compute derivatives e.g. dS/dt
-    ### (derivative = rate of change)
     dS_dt = tape.gradient(S, t_col) 
     dE_dt = tape.gradient(E, t_col) 
     dI_dt = tape.gradient(I, t_col) 
     dR_dt = tape.gradient(R, t_col) 
-
+    
     d_beta_dt = tape.gradient(beta, t_col)
     beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt))
-
+    
     del tape
 
-    ### SEIR equations - these are in real time not normalised time
-    dS_dt_true = -beta * S * I
-    dE_dt_true = beta * S * I - sigma * E
-    dI_dt_true = sigma * E - gamma * I
-    dR_dt_true = gamma * I
-    
-    ### divide the gradients by T 
-    ### This ensures physics loss is on the same scale as data loss
+    ### SEIR equations 
     days = 100.0
     T = tf.constant(days, dtype=tf.float32)
-    
-    dS_dt_normalised = dS_dt / T
-    dE_dt_normalised = dE_dt / T
-    dI_dt_normalised = dI_dt / T
-    dR_dt_normalised = dR_dt / T
-    
+    dS_dt_true_scaled = T * (-beta * S * I)
+    dE_dt_true_scaled = T * (beta * S * I - sigma * E)
+    dI_dt_true_scaled = T * (sigma * E - gamma * I)
+    dR_dt_true_scaled = T * (gamma * I)
+ 
     ### Physics-informed loss - mean squared error
-    loss_S = tf.reduce_mean(tf.square(dS_dt_normalised - dS_dt_true))
-    loss_E = tf.reduce_mean(tf.square(dE_dt_normalised - dE_dt_true))
-    loss_I = tf.reduce_mean(tf.square(dI_dt_normalised - dI_dt_true))
-    loss_R = tf.reduce_mean(tf.square(dR_dt_normalised - dR_dt_true))
+    loss_S = tf.reduce_mean(tf.square(dS_dt - dS_dt_true_scaled))
+    loss_E = tf.reduce_mean(tf.square(dE_dt - dE_dt_true_scaled))
+    loss_I = tf.reduce_mean(tf.square(dI_dt - dI_dt_true_scaled))
+    loss_R = tf.reduce_mean(tf.square(dR_dt - dR_dt_true_scaled))
 
     physics_loss = (
         1.0 * loss_S +
@@ -168,7 +159,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0 * data_loss + 1.0 * IC_loss + 1.0*physics_loss + 1.0*conservation_loss + 1.0* beta_smooth_loss
+    total_loss = 1.0 * data_loss + 1.0 * IC_loss + 0.001*physics_loss + 1.0*conservation_loss + 1.0* beta_smooth_loss
     
     return total_loss
 
