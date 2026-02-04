@@ -63,7 +63,7 @@ def create_pinn_model():
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
 
-    beta = Dense(1, activation=None, name='beta')(beta_hidden) 
+    beta = Dense(1, activation=None, name='beta')(beta_hidden)
 
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
     return model
@@ -79,11 +79,7 @@ I0 = tf.constant(1/100001, dtype=tf.float32)
 R0 = tf.constant(0.0, dtype=tf.float32)
 
 ### Define physics informed loss
-def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
-
-### Apply softplus to parameters to ensure they remain positive
-    sigma = tf.nn.softplus(sigma_raw)
-    gamma = tf.nn.softplus(gamma_raw)
+def seir_ode_loss(t_col, t_data_loss, I_data_loss, net):
     
     ### if t_col is a 1D array it is reshaped to a column vector
     if len(t_col.shape) == 1:t_col = tf.reshape(t_col, (-1, 1))
@@ -105,14 +101,22 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     with tf.GradientTape(persistent=True) as tape:
         tape.watch(t_col)
         S, E, I, R, beta = net(t_col)
-        beta = tf.nn.softplus(beta) 
         
+    ### Define parameters which don't vary over time
+    ### Following what was done in Qian et al. 2025
+    sigma = tf.constant(0.1, dtype=tf.float32, name='sigma')
+    gamma = tf.constant(0.1, dtype=tf.float32, name='gamma')
+    
     ### Compute derivatives e.g. dS/dt
     ### (derivative = rate of change)
     dS_dt = tape.gradient(S, t_col) 
     dE_dt = tape.gradient(E, t_col) 
     dI_dt = tape.gradient(I, t_col) 
     dR_dt = tape.gradient(R, t_col) 
+
+    d_beta_dt = tape.gradient(beta, t_col)
+    beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt))
+
     del tape
 
     ### SEIR equations - these are in real time not normalised time
@@ -138,10 +142,10 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     loss_R = tf.reduce_mean(tf.square(dR_dt_normalised - dR_dt_true))
 
     physics_loss = (
-        0.1 * loss_S +
-        0.1 * loss_E +
+        1.0 * loss_S +
+        1.0 * loss_E +
         1.0 * loss_I +
-        0.1 * loss_R 
+        1.0 * loss_R 
     )
 
     ### Initial condition loss (evaluate at t=0)
@@ -164,14 +168,9 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0 * data_loss + 1.0 * IC_loss + 0.5*physics_loss + 1.0*conservation_loss
+    total_loss = 1.0 * data_loss + 1.0 * IC_loss + 1.0*physics_loss + 1.0*conservation_loss + 1.0* beta_smooth_loss
     
     return total_loss
-
-### Define parameters which don't vary over time
-### Following what was done in Qian et al. 2025
-sigma_raw = tf.constant(0.3, dtype=tf.float32, name='sigma_raw')
-gamma_raw = tf.constant(0.3, dtype=tf.float32, name='gamma_raw')
 
 S0_fixed = S0
 E0_fixed = E0
@@ -209,17 +208,17 @@ trainable_vars = model.trainable_variables
 @tf.function
 def train_step(t_col, t_data, I_data):
     with tf.GradientTape() as tape:
-        loss = seir_ode_loss(t_col, t_data, I_data, model, sigma_raw, gamma_raw)
+        loss = seir_ode_loss(t_col, t_data, I_data, model)
     grads = tape.gradient(loss, model.trainable_variables)
     optm.apply_gradients(zip(grads, model.trainable_variables))
     return loss
 
 @tf.function
 def test_step(t_col, t_data, I_data):
-    return seir_ode_loss(t_col, t_data, I_data, model, sigma_raw, gamma_raw)
+    return seir_ode_loss(t_col, t_data, I_data, model)
 
 print("Starting training...")
-for itr in range(27000):
+for itr in range(20000):
     train_loss = train_step(t_col_tensor, t_train, I_train)
     train_loss_record.append(float(train_loss))
 
@@ -281,12 +280,16 @@ plt.show()
 t_plot = np.linspace(0.0, 1.0, 500)
 t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1, 1), dtype=tf.float32)
 _, _, _, _, beta = model.predict(t_plot_tensor)
+
+plt.figure(figsize=(8,5))
 plt.plot(t_plot, beta.flatten(), 'g-', linewidth=2)
-plt.xlabel('normalised time')
+plt.xlabel('Normalised time')
 plt.ylabel('β(t)')
+plt.ylim(0, 1)   # <--- force y-axis from 0 to 1
 plt.grid(True)
 plt.show()
-plt.savefig('Beta_over_time.png')
+plt.savefig('Beta_over_time.png', dpi=300)
+
 
 ### Model evaluation - mean absolute error
 mae_test = tf.keras.losses.MeanAbsoluteError()(I_test, I_pred[split:]).numpy()

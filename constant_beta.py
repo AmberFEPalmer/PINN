@@ -267,6 +267,31 @@ plt.tight_layout()
 plt.savefig('PINN_output.png')
 plt.show()
 
+### Plot actual infection counts vs PINN predictions rather than normalised
+N = 100001
+### Convert tensors to numpy arrays
+t_data_np  = to_numpy_flat(t_data)         
+I_pred_np  = to_numpy_flat(I_pred) * N
+I_data_np  = to_numpy_flat(I_data) * N         
+t_train_np = to_numpy_flat(t_train)
+I_train_np = to_numpy_flat(I_train) * N
+t_test_np  = to_numpy_flat(t_test)
+I_test_np  = to_numpy_flat(I_test) * N
+
+plt.figure(figsize=(12, 6))
+plt.plot(t_data_np, I_pred_np, 'b-', linewidth=2, label='PINN Predicted I')
+plt.plot(t_train_np, I_train_np, 'r-', linewidth=2, label='I (Observed – train)')
+plt.plot(t_test_np, I_test_np,'r-', linewidth=2, label='I (Observed – test)')
+plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Split')
+plt.xlabel('Time (days or normalized units)')
+plt.ylabel('Infected Individuals')
+plt.title('PINN Prediction vs Actual Infection Counts')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
 ### Model evaluation - mean absolute error
 mae_test = tf.keras.losses.MeanAbsoluteError()(I_test, I_pred[split:]).numpy()
 print("Mean Absolute Error:", mae_test)
