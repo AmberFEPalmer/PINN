@@ -8,21 +8,9 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import regularizers
 import pandas as pd
 
-### Main websites used 
-### https://i-systems.github.io/tutorial/KSNVE/220525/01_PINN.html
-### https://vitalitylearning.medium.com/solving-a-first-order-ode-with-physics-informed-neural-networks-22e385f09d35
-### code from seminal paper https://github.com/maziarraissi/PINNs
-### https://www.tensorflow.org/tutorials/customization/basics
-
-### Load preprocessed data as arrays (from COVID_Data.py script)
-t_data = np.load("data/t_data_2020-03.npy")     
-### Store the max time for scaling
-t_max = t_data.max()
-I_data = np.load("data/I_data_2020-03.npy")    
-
-### Collocation points are random therefore collocation points are only created in split_covid_data_by_month.py
-### this works because time is normalised from 0-1 and the PINN is trained with this normalised time  
-t_col  = np.load("data/t_col.npy")       
+data = pd.read_csv("SEIR_results.csv")   
+t_data = data["time"].values.reshape(-1, 1)
+I_data = data["I"].values.reshape(-1, 1)    
 
 ### Train/test split
 N_obs = len(I_data)
@@ -30,7 +18,7 @@ t_data = t_data[:N_obs].reshape(-1, 1)
 I_data = I_data.reshape(-1, 1)
 
 ### Generate training and testing data - takes first 80% of datasets
-split = int(0.8 * N_obs) 
+split = int(0.9 * N_obs) 
 
 t_train = t_data[:split] ### take all elements from 0 up to "split"
 I_train = I_data[:split]
@@ -38,12 +26,17 @@ I_train = I_data[:split]
 t_test  = t_data[split:] ### take all elements from "split" to the end
 I_test  = I_data[split:]
 
-### Convert to tensors
+### Convert to tensors (multi dimensional arrays)
+### Array = objects all of the same type
+### Need to convert from an array to a tensor for neural network
 t_train_tensor = tf.convert_to_tensor(t_train, dtype=tf.float32)
 I_train_tensor = tf.convert_to_tensor(I_train, dtype=tf.float32)
 
 ### Define PINN
 ### L2 regularisation for hidden layers 
+### L2 regularisation is included to help prevent overfitting
+### Add penalty proportional to the sum of squared coefficients to the loss function
+### Reduce model complexity, penalise large weights
 ### https://keras.io/api/layers/regularizers/
 ### https://developers.google.com/machine-learning/crash-course/overfitting/regularization
 def create_pinn_model():
@@ -57,19 +50,14 @@ def create_pinn_model():
     x_seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(x_seir)
 
     ### SEIR outputs 
+    ### 4 output layers
+    ### No activation function
     S = Dense(1, activation=None, name='S')(x_seir)
     E = Dense(1, activation=None, name='E')(x_seir)
     I = Dense(1, activation=None, name='I')(x_seir)
     R = Dense(1, activation=None, name='R')(x_seir)
 
-    ### Time-varying beta 
-    ### beta = softplus activation -> allows it to be greater than 1
-    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
-    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
-
-    beta = Dense(1, activation=None, name='beta')(beta_hidden) 
-
-    model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
+    model = Model(inputs=t_input, outputs=[S, E, I, R])
     return model
 
 model = create_pinn_model()
@@ -77,17 +65,14 @@ model = create_pinn_model()
 model.summary()
 
 ### Define initial conditions
-S0 = tf.constant(0.9, dtype=tf.float32)
-E0 = tf.constant(0.05, dtype=tf.float32)
-I0 = tf.constant(0.05, dtype=tf.float32)
+S0 = tf.constant(100000/100001, dtype=tf.float32)
+E0 = tf.constant(0.0, dtype=tf.float32)
+I0 = tf.constant(1/100001, dtype=tf.float32)
 R0 = tf.constant(0.0, dtype=tf.float32)
 
 ### Define physics informed loss
-def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
+def seir_ode_loss(t_col, t_data_loss, I_data_loss, net):
 
-### Apply softplus to parameters to ensure they remain positive
-    sigma = tf.nn.softplus(sigma_raw)
-    gamma = tf.nn.softplus(gamma_raw)
     
     ### if t_col is a 1D array it is reshaped to a column vector
     if len(t_col.shape) == 1:t_col = tf.reshape(t_col, (-1, 1))
@@ -104,12 +89,20 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     
     ### Physics loss at collocation points
     ### https://www.tensorflow.org/api_docs/python/tf/GradientTape
+    ### Gradient tape is used to record operations for automatic differentiation
+    ### Calculate the gradients of a computation
     with tf.GradientTape(persistent=True) as tape:
         tape.watch(t_col)
-        S, E, I, R, beta = net(t_col)
-        beta = tf.nn.softplus(beta) 
+        S, E, I, R = net(t_col)
         
+    ### Define parameters which don't vary over time
+    ## Following what was done in Qian et al. 2025
+    sigma = tf.constant(0.3, dtype=tf.float32, name='sigma_raw')
+    gamma = tf.constant(0.3, dtype=tf.float32, name='gamma_raw')
+    beta = tf.constant(0.8, dtype=tf.float32, name='beta_raw')
+    
     ### Compute derivatives e.g. dS/dt
+    ### (derivative = rate of change)
     dS_dt = tape.gradient(S, t_col) 
     dE_dt = tape.gradient(E, t_col) 
     dI_dt = tape.gradient(I, t_col) 
@@ -124,7 +117,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     
     ### divide the gradients by T 
     ### This ensures physics loss is on the same scale as data loss
-    days = 365.0
+    days = 100.0
     T = tf.constant(days, dtype=tf.float32)
     
     dS_dt_normalised = dS_dt / T
@@ -147,7 +140,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
 
     ### Initial condition loss (evaluate at t=0)
     t_zero = tf.constant([[0.0]], dtype=tf.float32) 
-    S_0, E_0, I_0, R_0, _ = net(t_zero)
+    S_0, E_0, I_0, R_0 = net(t_zero)
     
     IC_loss = tf.reduce_mean(
         tf.square(S_0 - S0_fixed) +
@@ -156,25 +149,18 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
         tf.square(R_0 - R0_fixed) )
     
     ### constrain SEIR equations to equal 1
-    S, E, I, R, beta = net(t_col)
+    S, E, I, R  = net(t_col)
     conservation_loss = tf.reduce_mean(tf.square(S + E + I + R - 1.0))
     
     ### Data loss 
     t_data_normalized = t_data_loss 
-    _, _, I_pred, _, _ = net(t_data_normalized)
+    _, _, I_pred, _ = net(t_data_normalized)
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    ### the scale for physics loss is bigger than data loss which is why data loss needs to be much higher weighted
-    ### (the derivatives are bigger numbers than the data)
-    total_loss = 1.0 * data_loss + 0.0 * IC_loss +0.1*physics_loss + 1.0*conservation_loss
+    total_loss = 1.0 * data_loss + 1.0 * IC_loss + 0.1*physics_loss + 1.0*conservation_loss
     
     return total_loss
-
-### Define parameters which don't vary over time
-### Following what was done in Qian et al. 2025
-sigma_raw = tf.constant(0.3, dtype=tf.float32, name='sigma_raw')
-gamma_raw = tf.constant(0.3, dtype=tf.float32, name='gamma_raw')
 
 S0_fixed = S0
 E0_fixed = E0
@@ -183,7 +169,6 @@ R0_fixed = R0
 
 ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
 ### learning rate scheduler added (not in original paper)
-### https://keras.io/api/optimizers/learning_rate_schedules/exponential_decay/
 initial_lr = 0.001
 lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
     initial_learning_rate=initial_lr,
@@ -194,7 +179,7 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 optm = Adam(learning_rate=lr_schedule)
 
 ### Collocation points for physics loss
-n_collocation = 30
+n_collocation = 100
 t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
 t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 
@@ -210,22 +195,21 @@ test_loss_record = []
 
 trainable_vars = model.trainable_variables 
 
-### @tf.function increased TensorFlow speed 
-### https://www.tensorflow.org/guide/function
 @tf.function
 def train_step(t_col, t_data, I_data):
     with tf.GradientTape() as tape:
-        loss = seir_ode_loss(t_col, t_data, I_data, model, sigma_raw, gamma_raw)
-    grads = tape.gradient(loss, model.trainable_variables)
-    optm.apply_gradients(zip(grads, model.trainable_variables))
+        loss = seir_ode_loss(t_col, t_data, I_data,
+                             model)
+    grads = tape.gradient(loss, trainable_vars)
+    optm.apply_gradients(zip(grads, trainable_vars))
     return loss
 
 @tf.function
 def test_step(t_col, t_data, I_data):
-    return seir_ode_loss(t_col, t_data, I_data, model, sigma_raw, gamma_raw)
+    return seir_ode_loss(t_col, t_data, I_data, model)
 
 print("Starting training...")
-for itr in range(500000):
+for itr in range(20000):
     train_loss = train_step(t_col_tensor, t_train, I_train)
     train_loss_record.append(float(train_loss))
 
@@ -242,7 +226,7 @@ for itr in range(500000):
 
 ### Plot training loss
 t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
-_, _, I_pred, _, _ = model(t_tensor)
+_, _, I_pred, _ = model(t_tensor)
 plt.figure(figsize=(10, 8))
 plt.plot(train_loss_record)
 plt.xlabel('Iteration')
@@ -282,42 +266,6 @@ plt.grid(True)
 plt.tight_layout()
 plt.savefig('PINN_output.png')
 plt.show()
-
-### Plot actual infection counts vs PINN predictions rather than normalised
-N = 55000000
-### Convert tensors to numpy arrays
-t_data_np  = to_numpy_flat(t_data)         
-I_pred_np  = to_numpy_flat(I_pred) * N
-I_data_np  = to_numpy_flat(I_data) * N         
-t_train_np = to_numpy_flat(t_train)
-I_train_np = to_numpy_flat(I_train) * N
-t_test_np  = to_numpy_flat(t_test)
-I_test_np  = to_numpy_flat(I_test) * N
-
-plt.figure(figsize=(12, 6))
-plt.plot(t_data_np, I_pred_np, 'b-', linewidth=2, label='PINN Predicted I')
-plt.plot(t_train_np, I_train_np, 'r-', linewidth=2, label='I (Observed – train)')
-plt.plot(t_test_np, I_test_np,'r-', linewidth=2, label='I (Observed – test)')
-plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Split')
-plt.xlabel('Time (days or normalized units)')
-plt.ylabel('Infected Individuals')
-plt.title('PINN Prediction vs Actual Infection Counts')
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.savefig('PINN_vs_actual_infections_counts.png')
-plt.show()
-
-### Plot beta over time
-t_plot = np.linspace(0.0, 1.0, 500)
-t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1, 1), dtype=tf.float32)
-_, _, _, _, beta = model.predict(t_plot_tensor)
-plt.plot(t_plot, beta.flatten(), 'g-', linewidth=2)
-plt.xlabel('normalised time')
-plt.ylabel('β(t)')
-plt.grid(True)
-plt.show()
-plt.savefig('Beta_over_time.png')
 
 ### Model evaluation - mean absolute error
 mae_test = tf.keras.losses.MeanAbsoluteError()(I_test, I_pred[split:]).numpy()

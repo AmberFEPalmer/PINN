@@ -18,7 +18,7 @@ t_data = t_data[:N_obs].reshape(-1, 1)
 I_data = I_data.reshape(-1, 1)
 
 ### Generate training and testing data - takes first 80% of datasets
-split = int(0.8 * N_obs) 
+split = int(0.9 * N_obs) 
 
 t_train = t_data[:split] ### take all elements from 0 up to "split"
 I_train = I_data[:split]
@@ -26,12 +26,17 @@ I_train = I_data[:split]
 t_test  = t_data[split:] ### take all elements from "split" to the end
 I_test  = I_data[split:]
 
-### Convert to tensors
+### Convert to tensors (multi dimensional arrays)
+### Array = objects all of the same type
+### Need to convert from an array to a tensor for neural network
 t_train_tensor = tf.convert_to_tensor(t_train, dtype=tf.float32)
 I_train_tensor = tf.convert_to_tensor(I_train, dtype=tf.float32)
 
 ### Define PINN
 ### L2 regularisation for hidden layers 
+### L2 regularisation is included to help prevent overfitting
+### Add penalty proportional to the sum of squared coefficients to the loss function
+### Reduce model complexity, penalise large weights
 ### https://keras.io/api/layers/regularizers/
 ### https://developers.google.com/machine-learning/crash-course/overfitting/regularization
 def create_pinn_model():
@@ -45,6 +50,8 @@ def create_pinn_model():
     x_seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(x_seir)
 
     ### SEIR outputs 
+    ### 4 output layers
+    ### No activation function
     S = Dense(1, activation=None, name='S')(x_seir)
     E = Dense(1, activation=None, name='E')(x_seir)
     I = Dense(1, activation=None, name='I')(x_seir)
@@ -52,6 +59,7 @@ def create_pinn_model():
 
     ### Time-varying beta 
     ### beta = softplus activation -> allows it to be greater than 1
+    ### 2 hidden layers, 50 neurons, tanh activation
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
 
@@ -92,12 +100,15 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     
     ### Physics loss at collocation points
     ### https://www.tensorflow.org/api_docs/python/tf/GradientTape
+    ### Gradient tape is used to record operations for automatic differentiation
+    ### Calculate the gradients of a computation
     with tf.GradientTape(persistent=True) as tape:
         tape.watch(t_col)
         S, E, I, R, beta = net(t_col)
         beta = tf.nn.softplus(beta) 
         
     ### Compute derivatives e.g. dS/dt
+    ### (derivative = rate of change)
     dS_dt = tape.gradient(S, t_col) 
     dE_dt = tape.gradient(E, t_col) 
     dI_dt = tape.gradient(I, t_col) 
@@ -112,7 +123,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     
     ### divide the gradients by T 
     ### This ensures physics loss is on the same scale as data loss
-    days = 365.0
+    days = 100.0
     T = tf.constant(days, dtype=tf.float32)
     
     dS_dt_normalised = dS_dt / T
@@ -153,9 +164,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net, sigma_raw, gamma_raw):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    ### the scale for physics loss is bigger than data loss which is why data loss needs to be much higher weighted
-    ### (the derivatives are bigger numbers than the data)
-    total_loss = 1.0 * data_loss + 1.0 * IC_loss +0.1*physics_loss + 1.0*conservation_loss
+    total_loss = 1.0 * data_loss + 1.0 * IC_loss + 0.5*physics_loss + 1.0*conservation_loss
     
     return total_loss
 
@@ -181,7 +190,7 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 optm = Adam(learning_rate=lr_schedule)
 
 ### Collocation points for physics loss
-n_collocation = 365
+n_collocation = 100
 t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
 t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 
@@ -210,7 +219,7 @@ def test_step(t_col, t_data, I_data):
     return seir_ode_loss(t_col, t_data, I_data, model, sigma_raw, gamma_raw)
 
 print("Starting training...")
-for itr in range(500000):
+for itr in range(27000):
     train_loss = train_step(t_col_tensor, t_train, I_train)
     train_loss_record.append(float(train_loss))
 
@@ -278,32 +287,6 @@ plt.ylabel('β(t)')
 plt.grid(True)
 plt.show()
 plt.savefig('Beta_over_time.png')
-
-
-### Plot actual infection counts vs PINN predictions rather than normalised
-N = 101
-### Convert tensors to numpy arrays
-t_data_np  = to_numpy_flat(t_data)         
-I_pred_np  = to_numpy_flat(I_pred) * N
-I_data_np  = to_numpy_flat(I_data) * N         
-t_train_np = to_numpy_flat(t_train)
-I_train_np = to_numpy_flat(I_train) * N
-t_test_np  = to_numpy_flat(t_test)
-I_test_np  = to_numpy_flat(I_test) * N
-
-plt.figure(figsize=(12, 6))
-plt.plot(t_data_np, I_pred_np, 'b-', linewidth=2, label='PINN Predicted I')
-plt.plot(t_train_np, I_train_np, 'r-', linewidth=2, label='I (Observed – train)')
-plt.plot(t_test_np, I_test_np,'r-', linewidth=2, label='I (Observed – test)')
-plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Split')
-plt.xlabel('Time (days or normalized units)')
-plt.ylabel('Infected Individuals')
-plt.title('PINN Prediction vs Actual Infection Counts')
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.savefig('PINN_vs_actual_infections_counts.png')
-plt.show()
 
 ### Model evaluation - mean absolute error
 mae_test = tf.keras.losses.MeanAbsoluteError()(I_test, I_pred[split:]).numpy()
