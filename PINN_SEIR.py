@@ -15,10 +15,10 @@ import pandas as pd
 ### https://www.tensorflow.org/tutorials/customization/basics
 
 ### Load preprocessed data as arrays (from COVID_Data.py script)
-t_data = np.load("data/t_data_2020.npy")     
+t_data = np.load("data/t_data_2020-03.npy")     
 ### Store the max time for scaling
 t_max = t_data.max()
-I_data = np.load("data/I_data_2020.npy")    
+I_data = np.load("data/I_data_2020-03.npy")    
 
 ### Collocation points are random therefore collocation points are only created in split_covid_data_by_month.py
 ### this works because time is normalised from 0-1 and the PINN is trained with this normalised time  
@@ -28,13 +28,10 @@ t_col  = np.load("data/t_col.npy")
 N_obs = len(I_data)
 t_data = t_data[:N_obs].reshape(-1, 1)
 I_data = I_data.reshape(-1, 1)
-
-### Generate training and testing data - takes first 80% of datasets
+### Generate training and testing data 
 split = int(0.9 * N_obs) 
-
 t_train = t_data[:split] ### take all elements from 0 up to "split"
 I_train = I_data[:split]
-
 t_test  = t_data[split:] ### take all elements from "split" to the end
 I_test  = I_data[split:]
 
@@ -66,8 +63,10 @@ def create_pinn_model():
     ### beta = softplus activation -> allows it to be greater than 1
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
-    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
 
+    ### beta output
+    ### 1 layer
+    ### No activation
     beta = Dense(1, activation=None, name='beta')(beta_hidden) 
 
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
@@ -84,7 +83,7 @@ I0 = tf.constant(0.05, dtype=tf.float32)
 R0 = tf.constant(0.0, dtype=tf.float32)
 
 ### Define physics informed loss
-def seir_ode_loss(t_col, t_data_loss, I_data_loss, net):
+def physics_loss(t_col, t_data_loss, I_data_loss, net):
     
     ### if t_col is a 1D array it is reshaped to a column vector
     if len(t_col.shape) == 1:t_col = tf.reshape(t_col, (-1, 1))
@@ -123,16 +122,16 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net):
 
     ### SEIR equations - these are in real time not normalised time
     T = tf.constant(t_max, dtype=tf.float32)
-    dS_dt_true_scaled = T * (-beta * S * I)
-    dE_dt_true_scaled = T * (beta * S * I - sigma * E)
-    dI_dt_true_scaled = T * (sigma * E - gamma * I)
-    dR_dt_true_scaled = T * (gamma * I)
+    dS_dt_physics = T * (-beta * S * I)
+    dE_dt_physics = T * (beta * S * I - sigma * E)
+    dI_dt_physics = T * (sigma * E - gamma * I)
+    dR_dt_physics = T * (gamma * I)
  
     ### Physics-informed loss - mean squared error
-    loss_S = tf.reduce_mean(tf.square(dS_dt - dS_dt_true_scaled))
-    loss_E = tf.reduce_mean(tf.square(dE_dt - dE_dt_true_scaled))
-    loss_I = tf.reduce_mean(tf.square(dI_dt - dI_dt_true_scaled))
-    loss_R = tf.reduce_mean(tf.square(dR_dt - dR_dt_true_scaled))
+    loss_S = tf.reduce_mean(tf.square(dS_dt - dS_dt_physics))
+    loss_E = tf.reduce_mean(tf.square(dE_dt - dE_dt_physics))
+    loss_I = tf.reduce_mean(tf.square(dI_dt - dI_dt_physics))
+    loss_R = tf.reduce_mean(tf.square(dR_dt - dR_dt_physics))
 
     physics_loss = (
         1.0 * loss_S +
@@ -145,7 +144,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net):
     t_zero = tf.constant([[0.0]], dtype=tf.float32) 
     S_0, E_0, I_0, R_0, _ = net(t_zero)
     
-    IC_loss = tf.reduce_mean(
+    Initial_condition_loss = tf.reduce_mean(
         tf.square(S_0 - S0_fixed) +
         tf.square(E_0 - E0_fixed) +
         tf.square(I_0 - I0_fixed) +
@@ -158,8 +157,7 @@ def seir_ode_loss(t_col, t_data_loss, I_data_loss, net):
     
     ### Total loss
     ### the scale for physics loss is bigger than data loss which is why data loss needs to be much higher weighted
-    ### (the derivatives are bigger numbers than the data)
-    total_loss = 1.0 * data_loss + 0.0 * IC_loss + 0.001*physics_loss + 0* beta_smooth_loss
+    total_loss = 1.0 * data_loss + 0.0 * Initial_condition_loss + 0.001*physics_loss + 1.0* beta_smooth_loss
     
     return total_loss
 
@@ -202,14 +200,14 @@ trainable_vars = model.trainable_variables
 @tf.function
 def train_step(t_col, t_data, I_data):
     with tf.GradientTape() as tape:
-        loss = seir_ode_loss(t_col, t_data, I_data, model)
+        loss = physics_loss(t_col, t_data, I_data, model)
     grads = tape.gradient(loss, model.trainable_variables)
     optm.apply_gradients(zip(grads, model.trainable_variables))
     return loss
 
 @tf.function
 def test_step(t_col, t_data, I_data):
-    return seir_ode_loss(t_col, t_data, I_data, model)
+    return physics_loss(t_col, t_data, I_data, model)
 
 print("Starting training...")
 for itr in range(500000):
@@ -223,7 +221,7 @@ for itr in range(500000):
     if itr % 10000 == 0:
         print(
             f"Iteration {itr}, "
-            f"Train Loss: {float(train_loss):.6f}, "
+            f"Train Loss: {float(train_loss):.6f}, " ### 6f means to 6 figures
             f"Test Loss: {float(test_loss):.6f}"
             )
 
@@ -263,7 +261,7 @@ plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Spl
 
 plt.xlabel('Normalized Time')
 plt.ylabel('Infected (normalized)')
-plt.title('SEIR PINN on real data: Training vs Forecasting')
+plt.title('SEIR PINN on real data')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
@@ -286,7 +284,7 @@ plt.plot(t_data_np, I_pred_np, 'b-', linewidth=2, label='PINN Predicted I')
 plt.plot(t_train_np, I_train_np, 'r-', linewidth=2, label='I (Observed – train)')
 plt.plot(t_test_np, I_test_np,'r-', linewidth=2, label='I (Observed – test)')
 plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Split')
-plt.xlabel('Time (days or normalized units)')
+plt.xlabel('Time')
 plt.ylabel('Infected Individuals')
 plt.title('PINN Prediction vs Actual Infection Counts')
 plt.legend()
@@ -304,19 +302,19 @@ plt.figure(figsize=(8,5))
 plt.plot(t_plot, beta.flatten(), 'g-', linewidth=2)
 plt.xlabel('Normalised time')
 plt.ylabel('β(t)')
-plt.ylim(0, 1)   # <--- force y-axis from 0 to 1
+plt.ylim(0, 1)  
 plt.grid(True)
 plt.show()
 plt.savefig('Beta_over_time.png', dpi=300)
 
-### Model evaluation - mean absolute error
+### Model evaluation - mean absolute error - test error
 mae_test = tf.keras.losses.MeanAbsoluteError()(I_test, I_pred[split:]).numpy()
 print("Mean Absolute Error:", mae_test)
 
-### Model evaluation - mean sqaured error
+### Model evaluation - mean sqaured error - test error
 mse_test = tf.keras.losses.MeanSquaredError()(I_test, I_pred[split:]).numpy()
 print("Mean Squared Error:", mse_test)
 
-### Model evaluation - mean absolute percentage error
+### Model evaluation - mean absolute percentage error - test error
 mape_test = tf.keras.losses.MeanAbsolutePercentageError()(I_test, I_pred[split:]).numpy()
 print("Mean Absolute Percentage Error:", mape_test)
