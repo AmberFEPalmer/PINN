@@ -9,36 +9,56 @@ N = 100001
 days = 100
 
 ### Parameters
-beta, sigma, gamma = 0.8, 0.1, 0.1
+sigma, gamma = 0.1, 0.1
 
-### SEIR model
-def ode_model(t, y, beta, sigma, gamma, N):
+beta_c = 1.0
+beta_1 = 0.5
+Lambda = 0.1
+
+def beta_t(t, beta_c, beta_1, Lambda):
+    return beta_1 + abs(beta_c - beta_1) * np.exp(-Lambda * t)
+
+### Define SEIR model with exponential decay for beta
+def ode_model(t, y, beta_c, beta_1, Lambda, sigma, gamma, N):
     S, E, I, R = y
+    
+    beta = beta_t(t, beta_c, beta_1, Lambda)
+    
     dSdt = -beta * S * I / N
     dEdt = beta * S * I / N - sigma * E
     dIdt = sigma * E - gamma * I
     dRdt = gamma * I
+    
     return [dSdt, dEdt, dIdt, dRdt]
 
 ### ODE solver
 def ode_solver(t, initial_conditions, parameters, N):
-    beta, sigma, gamma = parameters
+    beta_c, beta_1, Lambda, sigma, gamma = parameters
     return solve_ivp(
         ode_model,
         (t[0], t[-1]),
         initial_conditions,
-        args=(beta, sigma, gamma, N),
+        args=(beta_c, beta_1, Lambda, sigma, gamma, N),
         t_eval=t
     )
 
 ### Run model
-def run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N):
+def run_seir(days, S0, E0, I0, R0, beta_c, beta_1, Lambda, sigma, gamma, N):
     t = np.linspace(0, days, days + 1)
-    sol = ode_solver(t, [S0, E0, I0, R0], [beta, sigma, gamma], N)
+    sol = ode_solver(t,[S0, E0, I0, R0], [beta_c, beta_1, Lambda, sigma, gamma],N)
     S, E, I, R = sol.y
     return t, S, E, I, R
 
-t, S, E, I, R = run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N)
+t, S, E, I, R = run_seir(days, S0, E0, I0, R0, beta_c, beta_1, Lambda, sigma, gamma, N)
+
+### Visualise beta over time
+beta_values = beta_t(t, beta_c, beta_1, Lambda)
+plt.plot(t, beta_values)
+plt.title("Time-varying transmission rate β(t)")
+plt.xlabel("Days")
+plt.ylabel("β(t)")
+plt.grid()
+plt.show()
 
 ### Normalize
 N = S0 + E0 + I0 + R0
@@ -69,7 +89,7 @@ plt.show()
 t_norm = t / t.max()
 
 ### Export SEIR results to a csv file
-SEIR_data = pd.DataFrame({"time": t_norm,"I": I_norm,})
-print(SEIR_data)
-SEIR_data.to_csv("SEIR_results.csv", index=False)
+SEIR_beta_exponential_decay_data = pd.DataFrame({"time": t_norm,"I": I_norm,})
+print(SEIR_beta_exponential_decay_data)
+SEIR_beta_exponential_decay_data.to_csv("SEIR_beta_exponential_decay_results.csv", index=False)
 

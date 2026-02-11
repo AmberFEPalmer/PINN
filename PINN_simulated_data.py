@@ -9,7 +9,7 @@ from tensorflow.keras import regularizers
 import pandas as pd
 
 ### (Load data from SEIR_model.py)
-data = pd.read_csv("SEIR_results.csv")   
+data = pd.read_csv("SEIR_beta_exponential_decay_results.csv")   
 t_data = data["time"].values.reshape(-1, 1)
 I_data = data["I"].values.reshape(-1, 1)    
 
@@ -156,7 +156,7 @@ def loss_function(t_col, t_data_loss, I_data_loss, net):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0*conservation_loss + 1.0* beta_smooth_loss + 0.001*ODE_loss
+    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0*conservation_loss + 0.001*ODE_loss 
     
     return total_loss
 
