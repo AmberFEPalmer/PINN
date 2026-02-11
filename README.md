@@ -8,10 +8,8 @@ https://uob-my.sharepoint.com/:w:/r/personal/oc25003_bristol_ac_uk/_layouts/15/d
 
 PINN files
 1. PINN_simulated_data.py = PINN tested on simulated SIR model
-2. metapopulation_PINN.py = PINN tested on metapopulation SIR model
 3. PINN_SEIR.py = PINN on real world COVID-19 data
 
 Data files
 1. Data_processing.py = processing UKHSA COVID-19 case data
 2. SEIR_model.py = developing SEIR model to generate synthetic data
-3. metapopulation.py = developing metapopulation SIR model to generate synthetic data
