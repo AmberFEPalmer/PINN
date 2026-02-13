@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 ### Initial conditions
 S0, E0, I0, R0 = 100000, 0, 1, 0
@@ -65,6 +66,10 @@ R_norm = R_array / N
 t_norm = t_arr / t_arr.max()
 
 ### Export SEIR results to a csv file
+data_folder = os.path.join("..", "..", "data")
+
 SEIR_noise_data = pd.DataFrame({"time": t_norm,"I": I_norm,})
 print(SEIR_noise_data)
-SEIR_noise_data.to_csv("SEIR_noise_data.csv", index=False)
+
+csv_path = os.path.join(data_folder, "SEIR_noise_data.csv")
+SEIR_noise_data.to_csv(csv_path, index=False)

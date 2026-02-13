@@ -3,6 +3,7 @@ from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 import pandas as pd
 from patsy import dmatrix
+import os
 
 ### https://pubmed.ncbi.nlm.nih.gov/34799850/
 ### beta varies as a function of time
@@ -106,6 +107,11 @@ plt.show()
 t_norm = t / t.max()
 
 ### Export SEIR results to a csv file
+data_folder = os.path.join("..", "..", "data")
+
 SEIR_time_varying_data = pd.DataFrame({"time": t_norm,"I": I_norm,})
+
 print(SEIR_time_varying_data)
-SEIR_time_varying_data.to_csv("SEIR_time_varying_results.csv", index=False)
+
+csv_path = os.path.join(data_folder, "SEIR_time_varying_results.csv")
+SEIR_time_varying_data.to_csv(csv_path, index=False)

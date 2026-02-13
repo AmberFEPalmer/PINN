@@ -7,9 +7,15 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import regularizers
 import pandas as pd
+import os
 
-### (Load data from SEIR_model.py)
-data = pd.read_csv("SEIR_beta_exponential_decay_results.csv")   
+# Path to the data folder from the script location
+data_folder = os.path.join("..", "..", "data")
+
+# Load the CSV file
+data_path = os.path.join(data_folder, "SEIR_beta_exponential_decay_results.csv")
+data = pd.read_csv(data_path)
+
 t_data = data["time"].values.reshape(-1, 1)
 I_data = data["I"].values.reshape(-1, 1)    
 

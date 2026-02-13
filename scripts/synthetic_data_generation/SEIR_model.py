@@ -2,6 +2,7 @@ import numpy as np
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 import pandas as pd
+import os
 
 ### Initial conditions
 E0, I0, R0, S0 = 0, 1, 0, 100000
@@ -69,7 +70,10 @@ plt.show()
 t_norm = t / t.max()
 
 ### Export SEIR results to a csv file
+data_folder = os.path.join("..", "..", "data")
+
 SEIR_data = pd.DataFrame({"time": t_norm,"I": I_norm,})
 print(SEIR_data)
-SEIR_data.to_csv("SEIR_results.csv", index=False)
 
+csv_path = os.path.join(data_folder, "SEIR_data.csv")
+SEIR_data.to_csv(csv_path, index=False)
