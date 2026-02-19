@@ -13,7 +13,7 @@ import os
 data_folder = os.path.join("..", "..", "data")
 
 # Load the CSV file
-data_path = os.path.join(data_folder, "SEIR_beta_exponential_decay_results.csv")
+data_path = os.path.join(data_folder, "SEIR_demography_data.csv")
 data = pd.read_csv(data_path)
 
 t_data = data["time"].values.reshape(-1, 1)
@@ -162,7 +162,7 @@ def loss_function(t_col, t_data_loss, I_data_loss, net):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0*conservation_loss + 0.001*ODE_loss 
+    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.001*ODE_loss + 1.0 * beta_smooth_loss
     
     return total_loss
 

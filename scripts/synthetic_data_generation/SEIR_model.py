@@ -3,6 +3,7 @@ from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
+from phaseportrait import PhasePortrait2D
 
 ### Initial conditions
 E0, I0, R0, S0 = 0, 1, 0, 100000
@@ -77,3 +78,44 @@ print(SEIR_data)
 
 csv_path = os.path.join(data_folder, "SEIR_data.csv")
 SEIR_data.to_csv(csv_path, index=False)
+
+### R0
+R0 = beta/gamma
+print("R0 =", R0)
+
+### Phase plane
+plt.figure(figsize=(8,6))
+# Phase trajectory
+plt.plot(S, I, color="black", linewidth=2)
+# Start and end markers
+plt.scatter(S[0], I[0], color="black")
+plt.scatter(S[-1], I[-1], color="black")
+plt.xlabel("Susceptible (S)")
+plt.ylabel("Infected (I)")
+plt.title("SEIR Phase Plane (S vs I)")
+plt.legend()
+plt.grid(True, linestyle="--", alpha=0.4)
+plt.show()
+
+import sympy as sp
+
+S, E, I, R = sp.symbols('S E I R')
+beta, sigma, gamma, N = sp.symbols('beta sigma gamma N')
+
+dS = -beta*S*I/N
+dE = beta*S*I/N - sigma*E
+dI = sigma*E - gamma*I
+dR = gamma*I
+
+F = sp.Matrix([dS, dE, dI, dR])
+X = sp.Matrix([S, E, I, R])
+
+J = F.jacobian(X)
+print(J)
+
+DFE = {S: N, E: 0, I: 0, R: 0}
+J_DFE = J.subs(DFE)
+
+print(J_DFE)
+eigenvals = J_DFE.eigenvals()
+print(eigenvals)

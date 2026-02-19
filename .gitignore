@@ -24,3 +24,4 @@ seir_pinn_model.keras
 test.py
 metapopulation.py
 metapopulation_PINN.py
+.Rproj.user

@@ -5,11 +5,17 @@ import pandas as pd
 import os
 
 ### Initial conditions
-E0, I0, R0, S0 = 0, 1, 0, 100000
-N = 100001
-days = 100
-b = 0.0143 / 365 ### assuming average lifespan = 70
-d = 0.010 / 365 
+E0, I0, R0, S0 = 0, 1, 0, 67000099
+N = 67000000
+days = 150
+births = 701000
+deaths = 669000
+b = births / (N * 365)
+d = deaths / (N * 365)
+
+### https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/bulletins/annualmidyearpopulationestimates/mid2020#:~:text=The%20population%20of%20the%20UK,population%20growth%20in%20this%20period.
+### 701,000 births in UK 2020
+### 669,000 deaths in UK 2020
 
 ### Parameters
 beta, sigma, gamma = 0.8, 0.1, 0.1
