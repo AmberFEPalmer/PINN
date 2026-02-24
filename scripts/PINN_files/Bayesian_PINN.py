@@ -236,7 +236,7 @@ test_loss_record = []
 
 trainable_vars = model.trainable_variables 
 
-def predict_with_uncertainty(model, t, n_samples=500):
+def predict_with_uncertainty(model, t, n_samples=1000):
     preds = []
     for _ in range(n_samples):
         S, E, I, R, beta = model(t)
@@ -264,7 +264,7 @@ print("Starting training...")
 ### https://arxiv.org/abs/1903.10145
 total_iters = 110000
 kl_ramp_iters = 20000  # give more iterations before full KL
-kl_max = 0.0001
+kl_max = 0.00001
 for itr in range(total_iters):
     ### Linearly increase KL weight from 0 to kl_max over kl_ramp_iters
     kl_weight_var.assign(tf.minimum(kl_max, kl_max * itr / kl_ramp_iters))
