@@ -185,7 +185,7 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 )
 optm = Adam(learning_rate=lr_schedule)
 
-### Collocation points for physics loss
+### Collocation points for physics 
 n_collocation = 100
 t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
 t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
