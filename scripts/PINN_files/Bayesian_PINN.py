@@ -12,11 +12,11 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 tfpl = tfp.layers
 
-# Path to the data folder from the script location
+### Path to the data folder from the script location
 data_folder = os.path.join("..", "..", "data")
 
-# Load the CSV file
-data_path = os.path.join(data_folder, "SEIR_demography_data.csv")
+### Load CSV 
+data_path = os.path.join(data_folder, "SEIR_data.csv")
 data = pd.read_csv(data_path)
 
 t_data = data["time"].values.reshape(-1, 1)
@@ -42,14 +42,10 @@ I_train_tensor = tf.convert_to_tensor(I_train, dtype=tf.float32)
 N_data = t_train.shape[0]
 N_phys = t_train_tensor.shape[0]   
 
-N_effective = N_data + N_phys
-
 ### Control Kl divergence
 kl_weight_var = tf.Variable(0.0, trainable=False, dtype=tf.float32)
 
 ### Define PINN
-### Variational inference
-### https://www.tensorflow.org/probability/api_docs/python/tfp/layers/DenseFlipout
 def create_bayesian_pinn_model():
     ### Import time as input
     t_input = Input(shape=(1,), name='time_input')
@@ -58,23 +54,24 @@ def create_bayesian_pinn_model():
     ### Weights are probability distributions
     ### 50 neurons
     ### tanh activation
+    ### Variational inference - approximate the posterior
     ### kl = kullback-Leibler divergence -> measures how different two probability distributions are
     ### https://www.tensorflow.org/probability/api_docs/python/tfp/layers/DenseFlipout
     ### https://arxiv.org/abs/1803.04386
     seir = tfpl.DenseFlipout(
-        200,
+        50,
         activation='tanh',
         kernel_divergence_fn=lambda q, p, _: tfd.kl_divergence(q, p) 
         )(t_input)
     
     seir = tfpl.DenseFlipout(
-        200,
+        50,
         activation='tanh',
         kernel_divergence_fn=lambda q, p, _: tfd.kl_divergence(q, p)
         )(seir)
     
     seir = tfpl.DenseFlipout(
-        200,
+        50,
         activation='tanh',
         kernel_divergence_fn=lambda q, p, _: tfd.kl_divergence(q, p) 
         )(seir)
@@ -87,13 +84,13 @@ def create_bayesian_pinn_model():
 
     ### Seperate neural network for beta
     beta_hidden = tfpl.DenseFlipout(
-        200,
+        50,
         activation='tanh',
         kernel_divergence_fn=lambda q, p, _: tfd.kl_divergence(q, p) 
     )(t_input)
 
     beta_hidden = tfpl.DenseFlipout(
-        200,
+        50,
         activation='tanh',
         kernel_divergence_fn=lambda q, p, _: tfd.kl_divergence(q, p) 
     )(beta_hidden)
@@ -113,7 +110,7 @@ E0 = tf.constant(0.0, dtype=tf.float32)
 I0 = tf.constant(1/100001, dtype=tf.float32)
 R0 = tf.constant(0.0, dtype=tf.float32)
 
-### Define loss function for PINN
+### Define loss function 
 def loss_function(t_col, t_data_loss, I_data_loss, net):
     
     ### if t_col is a 1D array it is reshaped to a column vector
@@ -236,7 +233,9 @@ test_loss_record = []
 
 trainable_vars = model.trainable_variables 
 
-def predict_with_uncertainty(model, t, n_samples=1000):
+### Monte carlo sampling (not bootstrapping or MCMC)
+### https://link.springer.com/chapter/10.1007/978-1-0716-4132-3_7
+def predict_with_uncertainty(model, t, n_samples=200):
     preds = []
     for _ in range(n_samples):
         S, E, I, R, beta = model(t)
@@ -263,8 +262,8 @@ print("Starting training...")
 ### https://github.com/hubertrybka/vae-annealing?
 ### https://arxiv.org/abs/1903.10145
 total_iters = 110000
-kl_ramp_iters = 20000  # give more iterations before full KL
-kl_max = 0.00001
+kl_ramp_iters = 20000 
+kl_max = 0.0001
 for itr in range(total_iters):
     ### Linearly increase KL weight from 0 to kl_max over kl_ramp_iters
     kl_weight_var.assign(tf.minimum(kl_max, kl_max * itr / kl_ramp_iters))
@@ -317,7 +316,7 @@ def to_numpy_flat(arr):
     else:
         return arr.flatten()
 
-# Flatten all arrays
+### Flatten all arrays
 t_data_np  = to_numpy_flat(t_data)         
 I_pred_np  = to_numpy_flat(I_pred)
 t_train_np = to_numpy_flat(t_train)
@@ -325,11 +324,11 @@ I_train_np = to_numpy_flat(I_train)
 t_test_np  = to_numpy_flat(t_test)
 I_test_np = to_numpy_flat(I_test)
 
-### Deterministic PINN plot
+### PINN plot without UC
 plt.figure(figsize=(14, 6))
-plt.plot(t_data_np, I_pred_np, 'b-', linewidth=2, label='I (PINN prediction)')
-plt.plot(t_train_np, I_train_np, 'r-', linewidth=2, label='I (observed – train)')
-plt.plot(t_test_np, I_test_np, 'r-', linewidth=2, label='I (observed – test)')
+plt.plot(t_data_np, I_pred_np, color="#54942a", linewidth=2, label='I (PINN prediction)')
+plt.plot(t_train_np, I_train_np, color="#e74d71", linestyle='-',linewidth=2, label='I (observed – train)')
+plt.plot(t_test_np, I_test_np, color='#e74d71', linestyle='-', linewidth=2, label='I (observed – test)')
 plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
 plt.xlabel('Time')
 plt.ylabel('Infected (normalized)')
@@ -344,53 +343,70 @@ plt.figure(figsize=(14, 6))
 
 # Monte Carlo posterior
 t_tensor = tf.convert_to_tensor(t_data_np.reshape(-1, 1), dtype=tf.float32)
-mean, std = predict_with_uncertainty(model, t_tensor, n_samples=500)
+mean, std = predict_with_uncertainty(model, t_tensor, n_samples=200)
 
 mean = mean.flatten()
 std  = std.flatten()
 
-# Posterior mean in same style as deterministic prediction
-plt.plot(t_data_np, mean, 'b-', linewidth=2, label='I (posterior mean)')
+plt.plot(t_data_np, mean, color = '#54942a', linewidth=2, label='I (posterior mean)')
 
-# Observed data
-plt.plot(t_train_np, I_train_np, 'r-', linewidth=2, label='I (observed – train)')
-plt.plot(t_test_np, I_test_np, 'r-', linewidth=2, label='I (observed – test)')
+### Observed data
+plt.plot(t_train_np, I_train_np, color = '#e74d71', linewidth=2, label='I (observed – train)')
+plt.plot(t_test_np, I_test_np, '#e74d71', linewidth=2, label='I (observed – test)')
 plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
 
-# Credible interval (95%)
+### Credible interval (95%)
 plt.fill_between(
     t_data_np,
     mean - 2 * std,
     mean + 2 * std,
-    color='blue',
+    color='#e74d71',
     alpha=0.25,
     label='95% credible interval'
 )
 
 plt.xlabel('Time')
 plt.ylabel('Infected (normalized)')
-plt.title('SEIR Bayesian PINN with Uncertainty')
+plt.title('SEIR Bayesian PINN')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
 plt.show()
 
 ### Plot beta over time
-t_plot = np.linspace(0.0, 1.0, 500)
-t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1, 1), dtype=tf.float32)
-_, _, _, _, beta = model.predict(t_plot_tensor)
+t_plot = np.linspace(0, 1, 500)
+t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1,1), dtype=tf.float32)
 
+### Monte Carlo predictions
+beta_samples = []
+n_samples = 200
+
+for _ in range(n_samples):
+    _, _, _, _, beta = model(t_plot_tensor)
+    beta_samples.append(beta.numpy())
+
+beta_samples = np.array(beta_samples)
+
+beta_mean = beta_samples.mean(axis=0).flatten()
+beta_std  = beta_samples.std(axis=0).flatten()
+
+### Plot
 plt.figure(figsize=(8,5))
-plt.plot(t_plot, beta.flatten(), 'g-', linewidth=2)
-plt.xlabel('Normalised time')
-plt.ylabel('β(t)')
-plt.ylim(0, 1)  
-plt.grid(True)
-plt.show()
-plt.savefig('Beta_over_time.png', dpi=300)
+plt.plot(t_plot, beta_mean, color='#7397de', label='β(t) mean')
+plt.fill_between(
+    t_plot,
+    beta_mean - 2*beta_std,
+    beta_mean + 2*beta_std,
+    color="#7397de",
+    alpha=0.25,
+    label='95% credible interval'
+)
 
-### Model evaluation
-_, _, I_test_pred, _, _ = model(t_test)
-mae_test = tf.keras.losses.MeanAbsoluteError()(I_test, I_test_pred).numpy()
-mse_test = tf.keras.losses.MeanSquaredError()(I_test, I_test_pred).numpy()
-mape_test = tf.keras.losses.MeanAbsolutePercentageError()(I_test, I_test_pred).numpy()
+plt.xlabel('Normalized time')
+plt.ylabel('β(t)')
+plt.ylim(0,1)
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.savefig('Beta_over_time.png', dpi=300)
+plt.show()
