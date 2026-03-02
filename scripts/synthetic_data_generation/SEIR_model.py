@@ -11,7 +11,7 @@ N = 100001
 days = 100
 
 ### Parameters
-beta, sigma, gamma = 0.8, 0.1, 0.1
+beta, sigma, gamma = 0.6, 0.1, 0.1
 
 ### SEIR model
 def ode_model(t, y, beta, sigma, gamma, N):

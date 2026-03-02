@@ -94,6 +94,12 @@ def create_bayesian_pinn_model():
         activation='tanh',
         kernel_divergence_fn=lambda q, p, _: tfd.kl_divergence(q, p) 
     )(beta_hidden)
+    
+    beta_hidden = tfpl.DenseFlipout(
+        50,
+        activation='tanh',
+        kernel_divergence_fn=lambda q, p, _: tfd.kl_divergence(q, p) 
+    )(t_input)
 
     beta = tfpl.DenseFlipout(1, activation='softplus', name='beta')(beta_hidden)
 
@@ -189,7 +195,7 @@ def loss_function(t_col, t_data_loss, I_data_loss, net):
     ### Total loss
     N_data = t_train.shape[0]
     Kl_loss = tf.add_n(net.losses) / N_data
-    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.001*ODE_loss + 1.0 * beta_smooth_loss + (kl_weight_var * Kl_loss)
+    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.01*ODE_loss + 1.0 * beta_smooth_loss + (kl_weight_var * Kl_loss)
     
     return total_loss, {
         "data_loss": data_loss,
@@ -217,7 +223,7 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 optm = tf.keras.optimizers.legacy.Adam(learning_rate=lr_schedule, clipnorm=1.0)
 
 ### Collocation points for physics loss
-n_collocation = 100
+n_collocation = 1000
 t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
 t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 
@@ -261,7 +267,7 @@ print("Starting training...")
 
 ### https://github.com/hubertrybka/vae-annealing?
 ### https://arxiv.org/abs/1903.10145
-total_iters = 110000
+total_iters = 60000
 kl_ramp_iters = 20000 
 kl_max = 0.0001
 for itr in range(total_iters):
@@ -326,9 +332,9 @@ I_test_np = to_numpy_flat(I_test)
 
 ### PINN plot without UC
 plt.figure(figsize=(14, 6))
-plt.plot(t_data_np, I_pred_np, color="#54942a", linewidth=2, label='I (PINN prediction)')
-plt.plot(t_train_np, I_train_np, color="#e74d71", linestyle='-',linewidth=2, label='I (observed – train)')
-plt.plot(t_test_np, I_test_np, color='#e74d71', linestyle='-', linewidth=2, label='I (observed – test)')
+plt.plot(t_data_np, I_pred_np, color="#ff7ee3", linewidth=2, label='I (PINN prediction)')
+plt.plot(t_train_np, I_train_np, color="#004F94", linestyle='-',linewidth=2, label='I (observed – train)')
+plt.plot(t_test_np, I_test_np, color='#004F94', linestyle='-', linewidth=2, label='I (observed – test)')
 plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
 plt.xlabel('Time')
 plt.ylabel('Infected (normalized)')
@@ -348,11 +354,11 @@ mean, std = predict_with_uncertainty(model, t_tensor, n_samples=200)
 mean = mean.flatten()
 std  = std.flatten()
 
-plt.plot(t_data_np, mean, color = '#54942a', linewidth=2, label='I (posterior mean)')
+plt.plot(t_data_np, mean, color = '#ff7ee3', linewidth=2, label='I (posterior mean)')
 
 ### Observed data
-plt.plot(t_train_np, I_train_np, color = '#e74d71', linewidth=2, label='I (observed – train)')
-plt.plot(t_test_np, I_test_np, '#e74d71', linewidth=2, label='I (observed – test)')
+plt.plot(t_train_np, I_train_np, color = "#004F94", linewidth=2, label='I (observed – train)')
+plt.plot(t_test_np, I_test_np, '#004F94', linewidth=2, label='I (observed – test)')
 plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
 
 ### Credible interval (95%)
@@ -360,7 +366,7 @@ plt.fill_between(
     t_data_np,
     mean - 2 * std,
     mean + 2 * std,
-    color='#e74d71',
+    color='#ff7ee3',
     alpha=0.25,
     label='95% credible interval'
 )
@@ -392,12 +398,12 @@ beta_std  = beta_samples.std(axis=0).flatten()
 
 ### Plot
 plt.figure(figsize=(8,5))
-plt.plot(t_plot, beta_mean, color='#7397de', label='β(t) mean')
+plt.plot(t_plot, beta_mean, color='#167537', label='β(t) mean')
 plt.fill_between(
     t_plot,
     beta_mean - 2*beta_std,
     beta_mean + 2*beta_std,
-    color="#7397de",
+    color="#167537",
     alpha=0.25,
     label='95% credible interval'
 )

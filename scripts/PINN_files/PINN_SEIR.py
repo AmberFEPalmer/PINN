@@ -210,7 +210,7 @@ def test_step(t_col, t_data, I_data):
     return physics_loss(t_col, t_data, I_data, model)
 
 print("Starting training...")
-for itr in range(500000):
+for itr in range(4000):
     train_loss = train_step(t_col_tensor, t_train, I_train)
     train_loss_record.append(float(train_loss))
 

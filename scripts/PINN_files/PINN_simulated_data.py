@@ -13,7 +13,7 @@ import os
 data_folder = os.path.join("..", "..", "data")
 
 # Load the CSV file
-data_path = os.path.join(data_folder, "SEIR_demography_data.csv")
+data_path = os.path.join(data_folder, "SEIR_data.csv")
 data = pd.read_csv(data_path)
 
 t_data = data["time"].values.reshape(-1, 1)
@@ -62,14 +62,15 @@ def create_pinn_model():
 
     ### Time-varying beta 
     ### beta = softplus activation -> allows it to be greater than 1
-    ### 2 hidden layers, 50 neurons, tanh activation
+    ### 3 hidden layers, 50 neurons, tanh activation
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
+    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
 
     ### Beta outputs
     ### One output layer
     ### No activation function
-    beta = Dense(1, activation=None, name='beta')(beta_hidden)
+    beta = Dense(1, activation="softplus", name='beta')(beta_hidden)
 
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
     return model
@@ -162,9 +163,15 @@ def loss_function(t_col, t_data_loss, I_data_loss, net):
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
     
     ### Total loss
-    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.001*ODE_loss + 1.0 * beta_smooth_loss
+    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.01*ODE_loss + 1.0 * beta_smooth_loss
     
-    return total_loss
+    return total_loss, {
+        "data_loss": data_loss,
+        "IC_loss": Initial_condition_loss,
+        "conservation_loss": conservation_loss,
+        "ODE_loss": ODE_loss,
+        "beta_smooth_loss": beta_smooth_loss,
+    }
 
 S0_fixed = S0
 E0_fixed = E0
@@ -183,7 +190,7 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 optm = Adam(learning_rate=lr_schedule)
 
 ### Collocation points for physics 
-n_collocation = 100
+n_collocation = 1000
 t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
 t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 
@@ -202,30 +209,35 @@ trainable_vars = model.trainable_variables
 @tf.function
 def train_step(t_col, t_data, I_data):
     with tf.GradientTape() as tape:
-        loss = loss_function(t_col, t_data, I_data, model)
-    grads = tape.gradient(loss, model.trainable_variables)
+        total_loss, loss_dict = loss_function(t_col, t_data, I_data, model)
+    grads = tape.gradient(total_loss, model.trainable_variables)
     optm.apply_gradients(zip(grads, model.trainable_variables))
-    return loss
+    return total_loss, loss_dict
 
 @tf.function
 def test_step(t_col, t_data, I_data):
-    return loss_function(t_col, t_data, I_data, model)
+    total_loss, loss_dict = loss_function(t_col, t_data, I_data, model)
+    return total_loss, loss_dict
 
 print("Starting training...")
-for itr in range(110000):
-    train_loss = train_step(t_col_tensor, t_train, I_train)
+### 50,000 iterations -> consistent with Qian et al. 2025
+for itr in range(50000):
+    train_loss, train_loss_dict = train_step(t_col_tensor, t_train, I_train)
     train_loss_record.append(float(train_loss))
 
-    if itr % 1000 == 0:
-        test_loss = test_step(t_col_tensor, t_test, I_test)
-        test_loss_record.append(float(test_loss))
+    test_loss, test_loss_dict = test_step(t_col_tensor, t_test, I_test)
 
-    if itr % 10000 == 0:
+    if itr % 1000 == 0:
         print(
-            f"Iteration {itr}, "
-            f"Train Loss: {float(train_loss):.6f}, " ### 6f means to 6 figures
-            f"Test Loss: {float(test_loss):.6f}"
-            )
+            f"Iteration {itr}\n"
+            f"Train Loss: {float(train_loss):.6f}, "
+            f"Test Loss: {float(test_loss):.6f}\n"
+            f"Data: {float(train_loss_dict['data_loss']):.6f}, "
+            f"IC: {float(train_loss_dict['IC_loss']):.6f}, "
+            f"Conservation: {float(train_loss_dict['conservation_loss']):.6f}, "
+            f"ODE: {float(train_loss_dict['ODE_loss']):.6f}, "
+            f"Beta Smooth: {float(train_loss_dict['beta_smooth_loss']):.6f}"
+        )
 
 ### Plot training loss
 t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
@@ -256,9 +268,9 @@ I_test_np  = to_numpy_flat(I_test)
 
 ### Plot PINN training and forecasting
 plt.figure(figsize=(14, 6))
-plt.plot(t_data_np, I_pred_np,'b-', linewidth=2, label='I (PINN prediction)')
-plt.plot(t_train_np, I_train_np,'r-', linewidth=2, label='I (observed – train)')
-plt.plot(t_test_np, I_test_np,'r-', linewidth=2, label='I (observed – test)')
+plt.plot(t_data_np, I_pred_np, color="#ff7ee3", linewidth=2,  label='I (PINN prediction)')
+plt.plot(t_train_np, I_train_np, color="#004F94", linewidth=2, label='I (observed – train)')
+plt.plot(t_test_np, I_test_np, color="#004F94", linewidth=2, label='I (observed – test)')
 plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Split')
 
 plt.xlabel('Time')
