@@ -11,7 +11,7 @@ N = 100001
 days = 100
 
 ### Parameters
-beta, sigma, gamma = 0.6, 0.1, 0.1
+beta, sigma, gamma = 0.3, 0.1, 0.1
 
 ### SEIR model
 def ode_model(t, y, beta, sigma, gamma, N):
@@ -55,6 +55,8 @@ print(I)
 print(t, I)
 type(t)
 
+output_dir = "../../png_files"
+
 ### Plot results from SEIR model
 plt.figure(figsize=(10, 6))
 plt.plot(t, S)
@@ -65,6 +67,7 @@ plt.legend(["S", "E", "I", "R"])
 plt.title("SEIR model")
 plt.xlabel("Days")
 plt.ylabel("Number of people in each compartment")
+plt.savefig(os.path.join(output_dir, 'SEIR_constant_beta_0.8.png'))
 plt.show()
 
 ### Normalise time for PINN 
@@ -97,25 +100,3 @@ plt.legend()
 plt.grid(True, linestyle="--", alpha=0.4)
 plt.show()
 
-import sympy as sp
-
-S, E, I, R = sp.symbols('S E I R')
-beta, sigma, gamma, N = sp.symbols('beta sigma gamma N')
-
-dS = -beta*S*I/N
-dE = beta*S*I/N - sigma*E
-dI = sigma*E - gamma*I
-dR = gamma*I
-
-F = sp.Matrix([dS, dE, dI, dR])
-X = sp.Matrix([S, E, I, R])
-
-J = F.jacobian(X)
-print(J)
-
-DFE = {S: N, E: 0, I: 0, R: 0}
-J_DFE = J.subs(DFE)
-
-print(J_DFE)
-eigenvals = J_DFE.eigenvals()
-print(eigenvals)

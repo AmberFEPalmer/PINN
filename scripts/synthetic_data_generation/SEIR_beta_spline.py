@@ -27,11 +27,14 @@ spline_basis = dmatrix(
 psi = np.array([-1.2, -0.5, 0.3, -0.8, -1.0])
 beta_t = np.exp(spline_basis @ psi)
 
+output_dir = "../../png_files"
+
 ### Visualise beta over time
 plt.plot(t, beta_t)
 plt.title("Time-varying transmission rate β(t)")
 plt.xlabel("Days")
 plt.ylabel("β(t)")
+plt.savefig(os.path.join(output_dir, 'beta_spline.png'))
 plt.show()
 
 ### SEIR model with time varying beta
@@ -91,6 +94,8 @@ print(I)
 print(t, I)
 type(t)
 
+output_dir = "../../png_files"
+
 ### Visualisation
 plt.figure(figsize=(10, 6))
 plt.plot(t, S)
@@ -101,6 +106,7 @@ plt.legend(["S", "E", "I", "R"])
 plt.title("SEIR model with time-varying β(t)")
 plt.xlabel("Days")
 plt.ylabel("Population")
+plt.savefig(os.path.join(output_dir, 'SEIR_beta_spline.png'))
 plt.show()
 
 ### Normalise time for PINN 

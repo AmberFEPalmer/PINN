@@ -14,7 +14,7 @@ t = np.linspace(0, days, days + 1)
 sigma, gamma = 0.1, 0.1
 ### Initial beta and new beta after day 30
 beta0 = 0.8
-beta1 = 0.6
+beta1 = 0.4
 change_day = 30
 beta_t = np.where(t < change_day, beta0, beta1)
 
@@ -34,12 +34,15 @@ def ode_model(t, y, sigma, gamma, N):
     dRdt = gamma * I
     return [dSdt, dEdt, dIdt, dRdt]
 
+output_dir = "../../png_files"
+
 ### Visualise beta over time
 plt.plot(t, beta_t)
 plt.title("Time-varying transmission rate β(t)")
 plt.xlabel("Days")
 plt.ylabel("β(t)")
 plt.ylim(0, 1)  
+plt.savefig(os.path.join(output_dir, 'Beta_peicewise.png'))
 plt.show()
 
 ### ODE solver
@@ -74,6 +77,8 @@ print(I)
 print(t, I)
 type(t)
 
+output_dir = "../../png_files"
+
 ### Plot results from SEIR model
 plt.figure(figsize=(10, 6))
 plt.plot(t, S)
@@ -84,6 +89,7 @@ plt.legend(["S", "E", "I", "R"])
 plt.title("SEIR model")
 plt.xlabel("Days")
 plt.ylabel("Number of people in each compartment")
+plt.savefig(os.path.join(output_dir, 'SEIR_beta_peicewise.png'))
 plt.show()
 
 ### Normalise time for PINN 

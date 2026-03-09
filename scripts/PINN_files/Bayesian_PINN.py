@@ -16,7 +16,7 @@ tfpl = tfp.layers
 data_folder = os.path.join("..", "..", "data")
 
 ### Load CSV 
-data_path = os.path.join(data_folder, "SEIR_data.csv")
+data_path = os.path.join(data_folder, "SEIR_noise10_data.csv")
 data = pd.read_csv(data_path)
 
 t_data = data["time"].values.reshape(-1, 1)
@@ -195,7 +195,7 @@ def loss_function(t_col, t_data_loss, I_data_loss, net):
     ### Total loss
     N_data = t_train.shape[0]
     Kl_loss = tf.add_n(net.losses) / N_data
-    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.01*ODE_loss + 1.0 * beta_smooth_loss + (kl_weight_var * Kl_loss)
+    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.01*ODE_loss + (kl_weight_var * Kl_loss)
     
     return total_loss, {
         "data_loss": data_loss,
@@ -267,7 +267,7 @@ print("Starting training...")
 
 ### https://github.com/hubertrybka/vae-annealing?
 ### https://arxiv.org/abs/1903.10145
-total_iters = 60000
+total_iters = 90000
 kl_ramp_iters = 20000 
 kl_max = 0.0001
 for itr in range(total_iters):
@@ -371,48 +371,14 @@ plt.fill_between(
     label='95% credible interval'
 )
 
+output_dir = "../../png_files"
+
 plt.xlabel('Time')
 plt.ylabel('Infected (normalized)')
 plt.title('SEIR Bayesian PINN')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
+plt.savefig(os.path.join(output_dir, 'Bayesian_PINN_10_percent_noise.png'))
 plt.show()
 
-### Plot beta over time
-t_plot = np.linspace(0, 1, 500)
-t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1,1), dtype=tf.float32)
-
-### Monte Carlo predictions
-beta_samples = []
-n_samples = 200
-
-for _ in range(n_samples):
-    _, _, _, _, beta = model(t_plot_tensor)
-    beta_samples.append(beta.numpy())
-
-beta_samples = np.array(beta_samples)
-
-beta_mean = beta_samples.mean(axis=0).flatten()
-beta_std  = beta_samples.std(axis=0).flatten()
-
-### Plot
-plt.figure(figsize=(8,5))
-plt.plot(t_plot, beta_mean, color='#167537', label='β(t) mean')
-plt.fill_between(
-    t_plot,
-    beta_mean - 2*beta_std,
-    beta_mean + 2*beta_std,
-    color="#167537",
-    alpha=0.25,
-    label='95% credible interval'
-)
-
-plt.xlabel('Normalized time')
-plt.ylabel('β(t)')
-plt.ylim(0,1)
-plt.grid(True)
-plt.legend()
-plt.tight_layout()
-plt.savefig('Beta_over_time.png', dpi=300)
-plt.show()

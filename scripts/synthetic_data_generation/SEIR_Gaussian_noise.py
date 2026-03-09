@@ -25,7 +25,7 @@ S_list, E_list, I_list, R_list = [S], [E], [I], [R]
 for t in t_arr[1:]:
     dS = -beta * S * I / N * dt
     dE = (beta * S * I / N - sigma * E) * dt
-    dI = (sigma * E - gamma * I) * dt + 0.02 * I * np.random.normal(0, np.sqrt(dt))
+    dI = (sigma * E - gamma * I) * dt + 0.20 * I * np.random.normal(0, np.sqrt(dt))
     dR = gamma * I * dt
 
     S += dS
@@ -44,6 +44,8 @@ E_array = np.array(E_list)
 I_array = np.array(I_list)
 R_array = np.array(R_list)
 
+output_dir = "../../png_files"
+
 ### Visualisation
 plt.figure(figsize=(10,6))
 plt.plot(t_arr, S_array, label='Susceptible')
@@ -54,6 +56,7 @@ plt.xlabel('Days')
 plt.ylabel('Population')
 plt.title('SEIR Model with Noisy Beta')
 plt.legend()
+plt.savefig(os.path.join(output_dir, 'SEIR_Gaussian_noise_20percent.png'))
 plt.show()
 
 ### Normalize entire time series
@@ -71,5 +74,5 @@ data_folder = os.path.join("..", "..", "data")
 SEIR_noise_data = pd.DataFrame({"time": t_norm,"I": I_norm,})
 print(SEIR_noise_data)
 
-csv_path = os.path.join(data_folder, "SEIR_noise_data.csv")
+csv_path = os.path.join(data_folder, "SEIR_noise20_data.csv")
 SEIR_noise_data.to_csv(csv_path, index=False)
