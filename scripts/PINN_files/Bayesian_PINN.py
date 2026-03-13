@@ -16,7 +16,7 @@ tfpl = tfp.layers
 data_folder = os.path.join("..", "..", "data")
 
 ### Load CSV 
-data_path = os.path.join(data_folder, "SEIR_noise10_data.csv")
+data_path = os.path.join(data_folder, "SEIR_time_varying_results.csv")
 data = pd.read_csv(data_path)
 
 t_data = data["time"].values.reshape(-1, 1)
@@ -32,6 +32,8 @@ t_train = t_data[:split] ### take all elements from 0 up to "split"
 I_train = I_data[:split]
 t_test  = t_data[split:] ### take all elements from "split" to the end
 I_test  = I_data[split:]
+
+I_scale = tf.constant(float(I_train.max()), dtype=tf.float32)
 
 ### Convert to tensors (multi dimensional arrays)
 ### Array = objects all of the same type
@@ -99,7 +101,7 @@ def create_bayesian_pinn_model():
         50,
         activation='tanh',
         kernel_divergence_fn=lambda q, p, _: tfd.kl_divergence(q, p) 
-    )(t_input)
+    )(beta_hidden)
 
     beta = tfpl.DenseFlipout(1, activation='softplus', name='beta')(beta_hidden)
 
@@ -117,7 +119,7 @@ I0 = tf.constant(1/100001, dtype=tf.float32)
 R0 = tf.constant(0.0, dtype=tf.float32)
 
 ### Define loss function 
-def loss_function(t_col, t_data_loss, I_data_loss, net):
+def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
     
     ### if t_col is a 1D array it is reshaped to a column vector
     if len(t_col.shape) == 1:t_col = tf.reshape(t_col, (-1, 1))
@@ -190,12 +192,12 @@ def loss_function(t_col, t_data_loss, I_data_loss, net):
     ### Data loss 
     t_data_normalized = t_data_loss 
     _, _, I_pred, _, _ = net(t_data_normalized)
-    data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
+    data_loss = tf.reduce_mean(tf.square((I_pred - I_data_loss) / I_scale))
     
     ### Total loss
     N_data = t_train.shape[0]
     Kl_loss = tf.add_n(net.losses) / N_data
-    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.01*ODE_loss + (kl_weight_var * Kl_loss)
+    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.1*ODE_loss + (kl_weight_var * Kl_loss)
     
     return total_loss, {
         "data_loss": data_loss,
@@ -214,13 +216,7 @@ R0_fixed = R0
 ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
 ### learning rate scheduler added (not in original paper)
 initial_lr = 0.001
-lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=initial_lr,
-    decay_steps=6000,
-    decay_rate=0.95,
-    staircase=False
-)
-optm = tf.keras.optimizers.legacy.Adam(learning_rate=lr_schedule, clipnorm=1.0)
+optm = tf.keras.optimizers.legacy.Adam(learning_rate=initial_lr)
 
 ### Collocation points for physics loss
 n_collocation = 1000
@@ -241,7 +237,7 @@ trainable_vars = model.trainable_variables
 
 ### Monte carlo sampling (not bootstrapping or MCMC)
 ### https://link.springer.com/chapter/10.1007/978-1-0716-4132-3_7
-def predict_with_uncertainty(model, t, n_samples=200):
+def predict_with_uncertainty(model, t, n_samples=1000):
     preds = []
     for _ in range(n_samples):
         S, E, I, R, beta = model(t)
@@ -252,34 +248,34 @@ def predict_with_uncertainty(model, t, n_samples=200):
     return mean, std
 
 @tf.function
-def train_step(t_col, t_data, I_data):
+def train_step(t_col, t_data, I_data, I_scale):
     with tf.GradientTape() as tape:
-        total_loss, loss_dict = loss_function(t_col, t_data, I_data, model)
+        total_loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale)
     grads = tape.gradient(total_loss, model.trainable_variables)
     optm.apply_gradients(zip(grads, model.trainable_variables))
     return total_loss, loss_dict
 
 @tf.function
-def test_step(t_col, t_data, I_data):
-    return loss_function(t_col, t_data, I_data, model)
+def test_step(t_col, t_data, I_data, I_scale):
+    return loss_function(t_col, t_data, I_data, model, I_scale)
 
 print("Starting training...")
 
 ### https://github.com/hubertrybka/vae-annealing?
 ### https://arxiv.org/abs/1903.10145
-total_iters = 90000
+total_iters = 50000
 kl_ramp_iters = 20000 
 kl_max = 0.0001
 for itr in range(total_iters):
     ### Linearly increase KL weight from 0 to kl_max over kl_ramp_iters
     kl_weight_var.assign(tf.minimum(kl_max, kl_max * itr / kl_ramp_iters))
     ### Training step
-    train_loss, train_loss_dict = train_step(t_col_tensor, t_train, I_train)
+    train_loss, train_loss_dict = train_step(t_col_tensor, t_train, I_train, I_scale)
     train_loss_record.append(float(train_loss))
 
     ### Evaluate loss every 1000 iterations
     if itr % 1000 == 0:
-        test_loss, test_loss_dict = test_step(t_col_tensor, t_test, I_test)
+        test_loss, test_loss_dict = test_step(t_col_tensor, t_test, I_test, I_scale)
         test_loss_record.append(float(test_loss))
 
     ### Print progress every 10000 iterations
@@ -290,7 +286,7 @@ for itr in range(total_iters):
         print(
         f"Iteration {itr}, KL weight: {kl_weight_var.numpy():.5f}, "
         f"Train Loss: {float(train_loss):.6f}, "
-        f"Test Loss: {float(test_loss):.6f}"
+        f"Test Loss: {float(test_loss):.6f},"
         f"Iteration {itr}\n"
         f"Train Loss: {float(train_loss):.6f}, "
         f"Data: {float(train_loss_dict['data_loss']):.6f}, "
@@ -379,6 +375,46 @@ plt.title('SEIR Bayesian PINN')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, 'Bayesian_PINN_10_percent_noise.png'))
+plt.savefig(os.path.join(output_dir, 'Bayesian_PINN_beta_constant_0.4.png'))
 plt.show()
 
+### Plot beta over time
+t_plot = np.linspace(0.0, 1.0, 500)
+t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1, 1), dtype=tf.float32)
+
+### Monte Carlo sampling
+n_samples = 1000
+beta_samples = []
+
+for _ in range(n_samples):
+    _, _, _, _, beta = model(t_plot_tensor)
+    beta_samples.append(beta.numpy())
+
+beta_samples = np.array(beta_samples)
+
+beta_mean = beta_samples.mean(axis=0).flatten()
+beta_std  = beta_samples.std(axis=0).flatten()
+
+### Plot
+plt.figure(figsize=(8,5))
+
+plt.plot(t_plot, beta_mean, color='#7397de', linewidth=2, label='β(t) mean')
+
+plt.fill_between(
+    t_plot,
+    beta_mean - 2*beta_std,
+    beta_mean + 2*beta_std,
+    color="#7397de",
+    alpha=0.25,
+    label='95% credible interval'
+)
+
+plt.xlabel('Normalized time')
+plt.ylabel('β(t)')
+plt.ylim(0, 1)  
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+
+plt.savefig('B-PINN_param_est_Beta_0.4.png', dpi=300)
+plt.show()

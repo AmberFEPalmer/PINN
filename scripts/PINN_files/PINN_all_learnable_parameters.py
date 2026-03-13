@@ -30,6 +30,8 @@ I_train = I_data[:split]
 t_test  = t_data[split:] ### take all elements from "split" to the end
 I_test  = I_data[split:]
 
+I_scale = tf.constant(float(I_train.max()), dtype=tf.float32)
+
 ### Convert to tensors (multi dimensional arrays)
 ### Array = objects all of the same type
 ### Need to convert from an array to a tensor for neural network
@@ -64,6 +66,7 @@ def create_pinn_model():
     ### beta = softplus activation -> allows it to be greater than 1
     ### 2 hidden layers, 50 neurons, tanh activation
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
+    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
     beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
 
     ### Beta outputs
@@ -100,7 +103,7 @@ I0 = tf.constant(1/100001, dtype=tf.float32)
 R0 = tf.constant(0.0, dtype=tf.float32)
 
 ### Define loss function for PINN
-def loss_function(t_col, t_data_loss, I_data_loss, net):
+def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
     
     ### if t_col is a 1D array it is reshaped to a column vector
     if len(t_col.shape) == 1:t_col = tf.reshape(t_col, (-1, 1))
@@ -175,10 +178,10 @@ def loss_function(t_col, t_data_loss, I_data_loss, net):
     ### Data loss 
     t_data_normalized = t_data_loss 
     _, _, I_pred, _, _, _, _ = net(t_data_normalized)
-    data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
+    data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss/I_scale))
     
     ### Total loss
-    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.001*ODE_loss + 1.0 * beta_smooth_loss 
+    total_loss = 1000.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.001*ODE_loss + 1.0 * beta_smooth_loss 
     
     return total_loss
 
@@ -199,7 +202,7 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 optm = Adam(learning_rate=lr_schedule)
 
 ### Collocation points for physics loss
-n_collocation = 100
+n_collocation = 1000
 t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
 t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
 
@@ -218,17 +221,17 @@ trainable_vars = model.trainable_variables
 @tf.function
 def train_step(t_col, t_data, I_data):
     with tf.GradientTape() as tape:
-        loss = loss_function(t_col, t_data, I_data, model)
+        loss = loss_function(t_col, t_data, I_data, model, I_scale)
     grads = tape.gradient(loss, model.trainable_variables)
     optm.apply_gradients(zip(grads, model.trainable_variables))
     return loss
 
 @tf.function
 def test_step(t_col, t_data, I_data):
-    return loss_function(t_col, t_data, I_data, model)
+    return loss_function(t_col, t_data, I_data, model, I_scale)
 
 print("Starting training...")
-for itr in range(110000):
+for itr in range(50000):
     train_loss = train_step(t_col_tensor, t_train, I_train)
     train_loss_record.append(float(train_loss))
 

@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 ### Import data - COVID-19 cases from COVID dashboard
 ### (Zixuan email)
 ### File name = nation_newCasesBySpecimenDate.csv
-data = pd.read_csv("Data/Cases/nation_newCasesBySpecimenDate.csv")
+data = pd.read_csv("../../Data/Cases/nation_newCasesBySpecimenDate.csv")
 
 ### Filter for England only
 print(data.columns)
@@ -106,3 +106,9 @@ plt.savefig("covid_all_time.png")
 ### 31st Oct - 2nd lockdown
 ### 2nd Dec - 2nd lockdown lifted
 ### 6th Jan - 3rd lockdown
+
+t_data = np.load("t_data_2020.npy")
+I_data = np.load("I_data_2020.npy")
+
+print(t_data)
+print(I_data)

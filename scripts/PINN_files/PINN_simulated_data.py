@@ -13,7 +13,7 @@ import os
 data_folder = os.path.join("..", "..", "data")
 
 # Load the CSV file
-data_path = os.path.join(data_folder, "SEIR_data.csv")
+data_path = os.path.join(data_folder, "SEIR_beta_peicewise.csv")
 data = pd.read_csv(data_path)
 
 t_data = data["time"].values.reshape(-1, 1)
@@ -165,7 +165,7 @@ def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
     data_loss = tf.reduce_mean(tf.square((I_pred - I_data_loss) / I_scale))
     
     ### Total loss
-    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.1*ODE_loss + 1 * beta_smooth_loss
+    total_loss = 1.0 * data_loss +0.1*ODE_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss 
     
     return total_loss, {
         "data_loss": data_loss,
@@ -216,8 +216,8 @@ def test_step(t_col, t_data, I_data):
     return total_loss, loss_dict
 
 print("Starting training...")
-### 100,000 iterations
-for itr in range(100000):
+### 50,000 iterations (Qian et al. 2025)
+for itr in range(50000):
     train_loss, train_loss_dict = train_step(t_col_tensor, t_train, I_train)
     train_loss_record.append(float(train_loss))
 
@@ -262,6 +262,8 @@ I_train_np = to_numpy_flat(I_train)
 t_test_np  = to_numpy_flat(t_test)
 I_test_np  = to_numpy_flat(I_test)
 
+output_dir = "../../png_files"
+
 ### Plot PINN training and forecasting
 plt.figure(figsize=(14, 6))
 plt.plot(t_data_np, I_pred_np, color="#ff7ee3", linewidth=2,  label='I (PINN prediction)')
@@ -271,11 +273,11 @@ plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Spl
 
 plt.xlabel('Time')
 plt.ylabel('Infected (normalized)')
-plt.title('SEIR PINN on simulated data')
+plt.title('PINN network simulated data')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
-plt.savefig('PINN_output.png')
+plt.savefig(os.path.join(output_dir, 'PINN_beta_peicewise.png'))
 plt.show()
 
 ### Plot beta over time
@@ -289,5 +291,14 @@ plt.xlabel('Normalised time')
 plt.ylabel('β(t)')
 plt.ylim(0, 1)  
 plt.grid(True)
+output_dir = "../../png_files"
+plt.savefig(os.path.join(output_dir, 'PINN_parameter_est_beta_peicewise.png'))
 plt.show()
-plt.savefig('Beta_over_time.png', dpi=300)
+
+### Model evaluation - mean absolute error - test error
+mae_test = tf.keras.losses.MeanAbsoluteError()(I_test, I_pred[split:]).numpy()
+print("Mean Absolute Error:", mae_test)
+
+### Model evaluation - mean sqaured error - test error
+mse_test = tf.keras.losses.MeanSquaredError()(I_test, I_pred[split:]).numpy()
+print("Mean Squared Error:", mse_test)
