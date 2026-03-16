@@ -13,7 +13,7 @@ import os
 data_folder = os.path.join("..", "..", "data")
 
 # Load the CSV file
-data_path = os.path.join(data_folder, "SEIR_beta_peicewise.csv")
+data_path = os.path.join(data_folder, "SEIR_data.csv")
 data = pd.read_csv(data_path)
 
 t_data = data["time"].values.reshape(-1, 1)

@@ -1,114 +1,134 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
+ 
 ### Import data - COVID-19 cases from COVID dashboard
 ### (Zixuan email)
 ### File name = nation_newCasesBySpecimenDate.csv
 data = pd.read_csv("../../Data/Cases/nation_newCasesBySpecimenDate.csv")
-
+ 
 ### Filter for England only
 print(data.columns)
 print(data.head())
 data = data[data['area_name'] == 'England']
-
+ 
 ### Selecting only the date and the number of positive cases from the dataset
 data = data[['date', 'value']].rename(columns={'value': 'newCases'})
 ### Convert date column to date time format
 data['date'] = pd.to_datetime(data['date'])
-
+ 
 ### See when the data starts and ends
 print("Start date:", data['date'].min())
-print("End date:", data['date'].max())
-
+print("End date:",   data['date'].max())
+ 
+### Sort ascending (oldest first) - required for rolling operations
+data = data.sort_values('date').reset_index(drop=True)
+ 
 ### Smooth 7-day average - consistent with published literature e.g. Li et al. 2024
 data['newCases_smooth'] = data['newCases'].rolling(7, center=True, min_periods=1).mean()
-
-### Normalized time to [0,1]
-### (make time points between 0 and 1 - PINN works better with values between 0 and 1)
+ 
+### Normalised time (days since start) - used for raw/yearly saves
 data['t'] = (data['date'] - data['date'].min()).dt.days
-data['t_norm'] = (data['t'] - data['t'].min()) / (data['t'].max() - data['t'].min())
-
+ 
 ### Convert daily cases to infectious prevalence
-### raw data measures new infections but number of currently infected people is needed for the SEIR model
-### assume each individual remains infected for 5 days
+### Raw data measures new infections but number of currently infected people
+### is needed for the SEIR model.
+### Assume each individual remains infected for 5 days.
 infectious_period = 5
 data['I_prev'] = data['newCases_smooth'].rolling(
     infectious_period, min_periods=1
 ).sum()
-
-### Convert infection prevelance into a fraction of the population of the UK
+ 
+### Convert infection prevalence into a fraction of the UK population
 N = 56_000_000
 data['I_obs'] = data['I_prev'] / N
 
-### Split into months
-months ={ym: df for ym, df in data.groupby(data['date'].dt.to_period('M'))}
-print(f"Created {len(months)} monthly datasets.")
-
-### Save each month separately for PINN - as arrays (neural networks need arrays rather than dataframes)
-for ym, df in months.items():
-    ym_str = str(ym)  # e.g. "2020-03"
-    np.save(f"t_data_{ym_str}.npy", df['t_norm'].values.reshape(-1, 1))
-    np.save(f"I_data_{ym_str}.npy", df['I_obs'].values.reshape(-1, 1))
-
-### Split into years
-years ={y: df for y, df in data.groupby(data['date'].dt.year)}
-print(f"Created {len(years)} yearly datasets.")
-
-# Save each year separately with no normalisation to use in SEIR model
+### Study period: July 2020 – April 2022  (~93 weekly points, matches Qian et al. 2025)
+mask = (data['date'] >= '2020-07-01') & (data['date'] <= '2022-04-30')
+data_study = data[mask].copy().reset_index(drop=True)
+ 
+### Resample to weekly data (use mean of daily values within each week, aligned to week end)
+data_weekly = (
+    data_study
+    .set_index('date')
+    .resample('W')
+    .mean(numeric_only=True)
+    .reset_index()
+    .dropna(subset=['I_obs'])
+)
+ 
+### Normalise time to [0, 1] over the full study period
+t_days_study = (data_weekly['date'] - data_weekly['date'].min()).dt.days
+t_norm_study = (t_days_study - t_days_study.min()) / (t_days_study.max() - t_days_study.min())
+ 
+### Save combined study-period arrays 
+np.save("../../data/t_data_study.npy", t_norm_study.values.reshape(-1, 1))
+np.save("../../data/I_data_study.npy", data_weekly['I_obs'].values.reshape(-1, 1))
+ 
+print(f"\nStudy period (weekly): {len(data_weekly)} points "
+      f"({data_weekly['date'].min().date()} → {data_weekly['date'].max().date()})")
+print(f"  t_data_study range : {t_norm_study.min():.4f} → {t_norm_study.max():.4f}")
+print(f"  I_data_study range : {data_weekly['I_obs'].min():.6f} → {data_weekly['I_obs'].max():.6f}")
+ 
+### Also save collocation points for the study period
+np.save("../../data/t_col_study.npy", np.random.uniform(0, 1, (2000, 1)))
+ 
+### Per-year weekly saves 
+years = {y: df for y, df in data.groupby(data['date'].dt.year)}
+print(f"\nCreated {len(years)} yearly datasets.")
+ 
 for y, df in years.items():
     y_str = str(y)
-
-    # Raw time values for this year
-    t_year = df['t'].values
-    I_year = df['I_obs'].values
-
-    np.save(f"t_data_raw_{y_str}.npy", t_year)
-    np.save(f"I_data_raw_{y_str}.npy", I_year)
-
-### Save each year separately for PINN as arrays 
-for y, df in years.items():
-    y_str = str(y)
-    # Normalize t within this year
-    t_year = (df['t'] - df['t'].min()) / (df['t'].max() - df['t'].min())
-    # Save the per-year normalized t
-    np.save(f"t_data_{y_str}.npy", t_year.values.reshape(-1, 1))
-    np.save(f"I_data_{y_str}.npy", df['I_obs'].values.reshape(-1, 1))
-
-t_data_2020 = np.load("t_data_2020.npy")
-print("t_data_2020 range:", t_data_2020.min(), "to", t_data_2020.max())
-
-t_data_2021 = np.load("t_data_2021.npy")
-print("t_data_2021 range:", t_data_2021.min(), "to", t_data_2021.max())
-
-### Save collocation points 
-np.save("t__months_col.npy", np.random.uniform(0, 1, (2000, 1)))
-
-## Visualization
-plt.figure(figsize=(12, 5))
-plt.plot(data['date'], data['I_obs'] * N, label="Estimated infectious prevalence", color='blue')
-plt.scatter(data['date'], data['newCases'], label="Daily new cases", color='pink', alpha=0.5)
+ 
+    ### Resample this year's daily data to weekly
+    df_weekly = (
+        df.set_index('date')
+        .resample('W')
+        .mean(numeric_only=True)
+        .reset_index()
+        .dropna(subset=['I_obs'])
+    )
+ 
+    ### Normalise time to [0, 1] within the year
+    t_week = (df_weekly['date'] - df_weekly['date'].min()).dt.days
+    t_norm = (t_week - t_week.min()) / (t_week.max() - t_week.min())
+ 
+    np.save(f"../../data/t_data_{y_str}.npy", t_norm.values.reshape(-1, 1))
+    np.save(f"../../data/I_data_{y_str}.npy", df_weekly['I_obs'].values.reshape(-1, 1))
+ 
+    ### Also save raw (unnormalised) time in days for reference
+    np.save(f"../../data/t_data_raw_{y_str}.npy", t_week.values)
+    np.save(f"../../data/I_data_raw_{y_str}.npy", df_weekly['I_obs'].values)
+ 
+    print(f"  {y_str}: {len(df_weekly)} weekly points saved")
+ 
+### Verification prints
+t_study = np.load("../../data/t_data_study.npy")
+I_study = np.load("../../data/I_data_study.npy")
+print(f"\nt_data_study : {len(t_study)} points, "
+      f"range {t_study.min():.4f} → {t_study.max():.4f}")
+print(f"I_data_study : min {I_study.min():.6f}, max {I_study.max():.6f}")
+ 
+if len(t_study) < 85 or len(t_study) > 100:
+    print("WARNING: expected ~93 weekly points for July 2020–April 2022. "
+          f"Got {len(t_study)} — check the date filter.")
+else:
+    print(f"OK: {len(t_study)} weekly points (expected ~93).")
+ 
+# Visualisation of UK COVID-19 case data
+plt.figure(figsize=(14, 5))
+plt.plot(data['date'], data['I_obs'] * N,
+         color='blue', lw=1, alpha=0.4, label="Daily estimated prevalence")
+plt.plot(data_weekly['date'], data_weekly['I_obs'] * N,
+         color='blue', lw=2, label="Weekly (study period)")
+plt.scatter(data['date'], data['newCases'],
+            color='pink', alpha=0.3, s=4, label="Daily new cases (raw)")
+plt.axvspan(pd.Timestamp('2020-07-01'), pd.Timestamp('2022-04-30'),
+            alpha=0.08, color='green', label="Study period")
 plt.title("COVID-19: Estimated I(t) for SEIR PINN")
 plt.ylabel("People")
 plt.grid(True)
 plt.legend()
-plt.savefig("covid_all_time.png")
-
-#### plt.axvline(x=t_train_np[-1],color='gray', linestyle='--', label='Train/Test Split')
-
-### TODO - add to graph
-### 23rd March - first UK lockdown
-### 1st June - phased re-opening of schools
-### 15th June - shops reopen
-### 4th July - first local lockdown
-### 14th Aug - lockdown eased
-### 14th Sept - rule of 6
-### 31st Oct - 2nd lockdown
-### 2nd Dec - 2nd lockdown lifted
-### 6th Jan - 3rd lockdown
-
-t_data = np.load("t_data_2020.npy")
-I_data = np.load("I_data_2020.npy")
-
-print(t_data)
-print(I_data)
+plt.tight_layout()
+plt.savefig("../../data/covid_all_time.png")
+plt.show()
