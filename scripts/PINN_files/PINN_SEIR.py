@@ -100,11 +100,11 @@ def compute_loss(t_col, t_data_loss, I_data_loss, net, t_max, I0, E0, S0, R0=0.0
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
 
     ### Total loss 
-    total = (100.0   * data_loss +
-             1.0   * ode_loss +
+    total = (10.0   * data_loss +
+             0.1   * ode_loss +
              1.0 * ic_loss +
-             5.0 * conservation_loss +
-             1.0 * beta_smooth_loss)
+             1.0 * conservation_loss +
+             0.1 * beta_smooth_loss)
 
     return total, {
         "data_loss":         data_loss,
@@ -114,9 +114,8 @@ def compute_loss(t_col, t_data_loss, I_data_loss, net, t_max, I0, E0, S0, R0=0.0
         "beta_smooth_loss":  beta_smooth_loss,
     }
 
-
 ### Single window training
-def train_window(t_train, I_train, t_max, n_iter=50_000):
+def train_window(t_train, I_train, t_max, n_iter=10_000):
     model = create_pinn_model()
     optm  = tf.keras.optimizers.legacy.Adam(learning_rate=1e-3)
 
@@ -130,8 +129,8 @@ def train_window(t_train, I_train, t_max, n_iter=50_000):
     
     ### Convert arrays to tensors
     t_col_tensor = tf.convert_to_tensor(t_col_np, dtype=tf.float32)
-    t_tr         = tf.convert_to_tensor(t_train,  dtype=tf.float32)
-    I_tr         = tf.convert_to_tensor(I_train,  dtype=tf.float32)
+    t_tr = tf.convert_to_tensor(t_train,  dtype=tf.float32)
+    I_tr = tf.convert_to_tensor(I_train,  dtype=tf.float32)
 
     ### Training step function with @tf.function for performance
     @tf.function
@@ -153,7 +152,7 @@ def train_window(t_train, I_train, t_max, n_iter=50_000):
 ### Rolling window forecasting
 First_train_weeks = 17   ### initial window uses weeks 1–17
 Forecast_horizon  = 4    ### forecast 1, 2, 3, 4 weeks ahead
-N_ITER = 50_000
+N_ITER = 10_000
 
 ### Storage dictionaries
 all_predictions  = {}   ### predicted I 
