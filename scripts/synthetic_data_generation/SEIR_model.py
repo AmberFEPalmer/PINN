@@ -5,13 +5,14 @@ import pandas as pd
 import os
 from phaseportrait import PhasePortrait2D
 
+### Synthetic data generation for PINN
 ### Initial conditions
 E0, I0, R0, S0 = 0, 1, 0, 100000
 N = 100001
 days = 100
 
 ### Parameters
-beta, sigma, gamma = 0.8, 0.1, 0.1
+beta, sigma, gamma = 0.75, 0.25, 0.25
 
 ### SEIR model
 def ode_model(t, y, beta, sigma, gamma, N):

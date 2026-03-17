@@ -24,7 +24,7 @@ N_obs = len(I_data)
 t_data = t_data[:N_obs].reshape(-1, 1)
 I_data = I_data.reshape(-1, 1)
 ### Generate training and testing data 
-split = int(0.9 * N_obs) 
+split = int(0.6 * N_obs) 
 t_train = t_data[:split] ### take all elements from 0 up to "split"
 I_train = I_data[:split]
 t_test  = t_data[split:] ### take all elements from "split" to the end
@@ -65,14 +65,15 @@ def create_pinn_model():
     ### Time-varying beta 
     ### beta = softplus activation -> allows it to be greater than 1
     ### 3 hidden layers, 50 neurons, tanh activation
-    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
-    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
-    beta_hidden = Dense(50, activation = 'tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
+    beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
+    beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)   
+    beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
+    log_beta = Dense(1, activation=None, name='log_beta')(beta_hidden) 
 
     ### Beta outputs
     ### One output layer
     ### No activation function
-    beta = Dense(1, activation="softplus", name='beta')(beta_hidden)
+    beta = Lambda(lambda x: tf.exp(x), name='beta')(log_beta)  
 
     model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
     return model
@@ -110,17 +111,14 @@ def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
         
     ### Define parameters which don't vary over time
     ### Following what was done in Qian et al. 2025
-    sigma = tf.constant(0.1, dtype=tf.float32, name='sigma')
-    gamma = tf.constant(0.1, dtype=tf.float32, name='gamma')
+    sigma = tf.constant(0.25, dtype=tf.float32, name='sigma')
+    gamma = tf.constant(0.25, dtype=tf.float32, name='gamma')
     
     ### Compute derivatives e.g. dS/dt
     dS_dt = tape.gradient(S, t_col) 
     dE_dt = tape.gradient(E, t_col) 
     dI_dt = tape.gradient(I, t_col) 
     dR_dt = tape.gradient(R, t_col) 
-    
-    d_beta_dt = tape.gradient(beta, t_col)
-    beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt))
     
     del tape
 
@@ -133,6 +131,10 @@ def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
     dR_dt_physics = T * (gamma * I)
  
     ### Physics-informed loss - mean squared error
+    
+    ### resolve ODE model
+    ### put in values rather than gradient
+    
     loss_S = tf.reduce_mean(tf.square(dS_dt - dS_dt_physics))
     loss_E = tf.reduce_mean(tf.square(dE_dt - dE_dt_physics))
     loss_I = tf.reduce_mean(tf.square(dI_dt - dI_dt_physics))
@@ -165,14 +167,13 @@ def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
     data_loss = tf.reduce_mean(tf.square((I_pred - I_data_loss) / I_scale))
     
     ### Total loss
-    total_loss = 1.0 * data_loss +0.1*ODE_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss 
+    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss 
     
     return total_loss, {
         "data_loss": data_loss,
         "IC_loss": Initial_condition_loss,
         "conservation_loss": conservation_loss,
         "ODE_loss": ODE_loss,
-        "beta_smooth_loss": beta_smooth_loss,
     }
 
 S0_fixed = S0
@@ -231,8 +232,7 @@ for itr in range(50000):
             f"Data: {float(train_loss_dict['data_loss']):.6f}, "
             f"IC: {float(train_loss_dict['IC_loss']):.6f}, "
             f"Conservation: {float(train_loss_dict['conservation_loss']):.6f}, "
-            f"ODE: {float(train_loss_dict['ODE_loss']):.6f}, "
-            f"Beta Smooth: {float(train_loss_dict['beta_smooth_loss']):.6f}"
+            f"ODE: {float(train_loss_dict['ODE_loss']):.6f}"
         )
 
 ### Plot training loss
