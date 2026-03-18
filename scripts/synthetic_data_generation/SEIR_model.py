@@ -3,16 +3,17 @@ from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
-from phaseportrait import PhasePortrait2D
 
 ### Synthetic data generation for PINN
+
 ### Initial conditions
 E0, I0, R0, S0 = 0, 1, 0, 100000
 N = 100001
 days = 100
 
 ### Parameters
-beta, sigma, gamma = 0.75, 0.25, 0.25
+beta_values = [0.75, 0.5, 0.4]
+sigma, gamma = 0.25, 0.25
 
 ### SEIR model
 def ode_model(t, y, beta, sigma, gamma, N):
@@ -41,63 +42,45 @@ def run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N):
     S, E, I, R = sol.y
     return t, S, E, I, R
 
-t, S, E, I, R = run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N)
-
-### Normalize
-N = S0 + E0 + I0 + R0
-S_norm = S / N
-E_norm = E / N
-I_norm = I / N
-R_norm = R / N
-
-### Print values for t and I 
-print(t)
-print(I)
-print(t, I)
-type(t)
-
+### Output directories
 output_dir = "../../png_files"
-
-### Plot results from SEIR model
-plt.figure(figsize=(10, 6))
-plt.plot(t, S)
-plt.plot(t, E)
-plt.plot(t, I)
-plt.plot(t, R)
-plt.legend(["S", "E", "I", "R"])
-plt.title("SEIR model")
-plt.xlabel("Days")
-plt.ylabel("Number of people in each compartment")
-plt.savefig(os.path.join(output_dir, 'SEIR_constant_beta_0.8.png'))
-plt.show()
-
-### Normalise time for PINN 
-t_norm = t / t.max()
-
-### Export SEIR results to a csv file
 data_folder = os.path.join("..", "..", "data")
 
-SEIR_data = pd.DataFrame({"time": t_norm,"I": I_norm,})
-print(SEIR_data)
+### Loop over beta values
+for beta in beta_values:
 
-csv_path = os.path.join(data_folder, "SEIR_data.csv")
-SEIR_data.to_csv(csv_path, index=False)
+    t, S, E, I, R = run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N)
 
-### R0
-R0 = beta/gamma
-print("R0 =", R0)
+    ### Normalize
+    N_norm = S0 + E0 + I0 + R0
+    S_norm = S / N_norm
+    E_norm = E / N_norm
+    I_norm = I / N_norm
+    R_norm = R / N_norm
 
-### Phase plane
-plt.figure(figsize=(8,6))
-# Phase trajectory
-plt.plot(S, I, color="black", linewidth=2)
-# Start and end markers
-plt.scatter(S[0], I[0], color="black")
-plt.scatter(S[-1], I[-1], color="black")
-plt.xlabel("Susceptible (S)")
-plt.ylabel("Infected (I)")
-plt.title("SEIR Phase Plane (S vs I)")
-plt.legend()
-plt.grid(True, linestyle="--", alpha=0.4)
-plt.show()
+    ### Print values for t and I
+    print(f"\n--- beta = {beta} ---")
+    print(t)
+    print(I)
 
+    ### Plot results from SEIR model
+    plt.figure(figsize=(10, 6))
+    plt.plot(t, S)
+    plt.plot(t, E)
+    plt.plot(t, I)
+    plt.plot(t, R)
+    plt.legend(["S", "E", "I", "R"])
+    plt.title(f"SEIR model (β={beta})")
+    plt.xlabel("Days")
+    plt.ylabel("Number of people in each compartment")
+    plt.savefig(os.path.join(output_dir, f'SEIR_constant_beta_{beta}.png'))
+    plt.show()
+
+    ### Normalise time for PINN
+    t_norm = t / t.max()
+
+    ### Export SEIR results to a csv file
+    SEIR_data = pd.DataFrame({"time": t_norm, "I": I_norm})
+    print(SEIR_data)
+    csv_path = os.path.join(data_folder, f"SEIR_data_beta_{beta}.csv")
+    SEIR_data.to_csv(csv_path, index=False)

@@ -16,7 +16,7 @@ tfpl = tfp.layers
 data_folder = os.path.join("..", "..", "data")
 
 ### Load CSV 
-data_path = os.path.join(data_folder, "SEIR_time_varying_results.csv")
+data_path = os.path.join(data_folder, "SEIR_data_beta_0.4.csv")
 data = pd.read_csv(data_path)
 
 t_data = data["time"].values.reshape(-1, 1)
@@ -141,8 +141,8 @@ def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
         
     ### Define parameters which don't vary over time
     ### Following what was done in Qian et al. 2025
-    sigma = tf.constant(0.1, dtype=tf.float32, name='sigma')
-    gamma = tf.constant(0.1, dtype=tf.float32, name='gamma')
+    sigma = tf.constant(0.25, dtype=tf.float32, name='sigma')
+    gamma = tf.constant(0.25, dtype=tf.float32, name='gamma')
     
     ### Compute derivatives e.g. dS/dt
     dS_dt = tape.gradient(S, t_col) 
@@ -197,7 +197,7 @@ def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
     ### Total loss
     N_data = t_train.shape[0]
     Kl_loss = tf.add_n(net.losses) / N_data
-    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.1*ODE_loss + (kl_weight_var * Kl_loss)
+    total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 0.1*beta_smooth_loss + 1.0 * conservation_loss + 0.1*ODE_loss + (kl_weight_var * Kl_loss)
     
     return total_loss, {
         "data_loss": data_loss,
@@ -309,7 +309,7 @@ plt.ylabel('Loss')
 plt.title('Training Loss Over Time')
 plt.yscale('log')  
 plt.grid(True)
-plt.savefig('PINN_training_loss.png') ### savefig has to be before show
+plt.savefig('Bayesian_PINN_training_loss_beta_0.4.png') ### savefig has to be before show
 plt.show()
 
 def to_numpy_flat(arr):
@@ -332,9 +332,9 @@ plt.plot(t_data_np, I_pred_np, color="#ff7ee3", linewidth=2, label='I (PINN pred
 plt.plot(t_train_np, I_train_np, color="#004F94", linestyle='-',linewidth=2, label='I (observed – train)')
 plt.plot(t_test_np, I_test_np, color='#004F94', linestyle='-', linewidth=2, label='I (observed – test)')
 plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
-plt.xlabel('Time')
-plt.ylabel('Infected (normalized)')
-plt.title('SEIR PINN on simulated data')
+plt.xlabel('Normalised time')
+plt.ylabel('Infected (normalised)')
+plt.title('Bayesian PINN on simulated data beta=0.4 (without uncertainty)')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
@@ -350,11 +350,11 @@ mean, std = predict_with_uncertainty(model, t_tensor, n_samples=200)
 mean = mean.flatten()
 std  = std.flatten()
 
-plt.plot(t_data_np, mean, color = '#ff7ee3', linewidth=2, label='I (posterior mean)')
+plt.plot(t_data_np, mean, color = '#ff7ee3', linewidth=2, label='Infected - posterior mean')
 
 ### Observed data
-plt.plot(t_train_np, I_train_np, color = "#004F94", linewidth=2, label='I (observed – train)')
-plt.plot(t_test_np, I_test_np, '#004F94', linewidth=2, label='I (observed – test)')
+plt.plot(t_train_np, I_train_np, color = "#004F94", linewidth=2, label='Infected - observed data')
+plt.plot(t_test_np, I_test_np, '#004F94', linewidth=2)
 plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
 
 ### Credible interval (95%)
@@ -369,9 +369,9 @@ plt.fill_between(
 
 output_dir = "../../png_files"
 
-plt.xlabel('Time')
-plt.ylabel('Infected (normalized)')
-plt.title('SEIR Bayesian PINN')
+plt.xlabel('Normalised time')
+plt.ylabel('Infected (normalised)')
+plt.title('Bayesian PINN vs observed data (β=0.4)')
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
@@ -409,12 +409,12 @@ plt.fill_between(
     label='95% credible interval'
 )
 
-plt.xlabel('Normalized time')
+plt.xlabel('Normalised time')
 plt.ylabel('β(t)')
 plt.ylim(0, 1)  
 plt.grid(True)
 plt.legend()
 plt.tight_layout()
 
-plt.savefig('B-PINN_param_est_Beta_0.4.png', dpi=300)
+plt.savefig(os.path.join(output_dir, 'Bayesian_PINN__parameter_estimation beta_constant_0.4.png'))
 plt.show()
