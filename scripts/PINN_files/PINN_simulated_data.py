@@ -12,16 +12,38 @@ import os
 data_folder = os.path.join("..", "..", "data")
 output_dir = "../../png_files"
 
-beta_values = [0.75, 0.5, 0.4]
+### Define scenarios to run
+scenarios = [
+    ### Constant-beta scenarios (one entry per beta value)
+    {"label": "beta_0.75", "csv": "SEIR_data_beta_0.75.csv","beta_true": 0.75, "smooth_beta": True},
+    {"label": "beta_0.5", "csv": "SEIR_data_beta_0.5.csv", "beta_true": 0.5, "smooth_beta": True},
+    {"label": "beta_0.4","csv": "SEIR_data_beta_0.4.csv","beta_true": 0.4, "smooth_beta": True},
+    ### Time-varying beta scenarios
+    {"label": "beta_piecewise","csv": "SEIR_beta_peicewise.csv","beta_true": None, "smooth_beta": False},
+    {"label": "beta_spline","csv": "SEIR_beta_spline.csv", "beta_true": None, "smooth_beta": False},
+    {"label": "beta_exp_decay","csv": "SEIR_beta_exponential_decay_results.csv", "beta_true": None, "smooth_beta": False},
+]
 
-for beta_true in beta_values:
+### Gaussian noise scenarios (1% – 20%), beta_true = 0.75 (the ground truth used to generate the data)
+for noise_percent in range(1, 21):
+    scenarios.append({
+        "label": f"Gaussian_noise_{noise_percent}percent",
+        "csv": f"SEIR_Gaussian_noise_{noise_percent}percent.csv",
+        "beta_true": 0.75,
+        "smooth_beta": True,
+    })
+
+### information for creating figures
+for scenario in scenarios:
+    label = scenario["label"]
+    csv_file = scenario["csv"]
+    beta_true = scenario["beta_true"]   # None for time-varying scenarios
 
     print(f"\n{'='*50}")
-    print(f"Running PINN for beta = {beta_true}")
+    print(f"Running PINN for scenario: {label}")
     print(f"{'='*50}")
 
-    ### Load the CSV file for this beta
-    data_path = os.path.join(data_folder, f"SEIR_data_beta_{beta_true}.csv")
+    data_path = os.path.join(data_folder, csv_file)
     data = pd.read_csv(data_path)
 
     t_data = data["time"].values.reshape(-1, 1)
@@ -39,6 +61,8 @@ for beta_true in beta_values:
     I_test  = I_data[split:]
 
     I_scale = tf.constant(float(I_train.max()), dtype=tf.float32)
+
+    N_total = 100001 
 
     ### Convert to tensors (multi dimensional arrays)
     ### Array = objects all of the same type
@@ -99,7 +123,7 @@ for beta_true in beta_values:
     R0 = tf.constant(0.0, dtype=tf.float32)
 
     ### Define loss function for PINN
-    def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
+    def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale, smooth_beta=True):
         
         ### if t_col is a 1D array it is reshaped to a column vector
         if len(t_col.shape) == 1:t_col = tf.reshape(t_col, (-1, 1))
@@ -131,7 +155,7 @@ for beta_true in beta_values:
         dR_dt = tape.gradient(R, t_col) 
         
         d_beta_dt = tape.gradient(beta, t_col)
-        beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt))
+        beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt)) if smooth_beta else 0.0
         
         del tape
 
@@ -144,10 +168,6 @@ for beta_true in beta_values:
         dR_dt_physics = T * (gamma * I)
     
         ### Physics-informed loss - mean squared error
-        
-        ### resolve ODE model
-        ### put in values rather than gradient
-        
         loss_S = tf.reduce_mean(tf.square(dS_dt - dS_dt_physics))
         loss_E = tf.reduce_mean(tf.square(dE_dt - dE_dt_physics))
         loss_I = tf.reduce_mean(tf.square(dI_dt - dI_dt_physics))
@@ -180,7 +200,7 @@ for beta_true in beta_values:
         data_loss = tf.reduce_mean(tf.square((I_pred - I_data_loss) / I_scale))
         
         ### Total loss
-        total_loss = 1.0 * data_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.1*beta_smooth_loss
+        total_loss = 1.0 * data_loss+ 0.1*ODE_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.1*beta_smooth_loss
         
         return total_loss, {
             "data_loss": data_loss,
@@ -215,17 +235,19 @@ for beta_true in beta_values:
 
     trainable_vars = model.trainable_variables 
 
+    smooth_beta = scenario["smooth_beta"]
+
     @tf.function
     def train_step(t_col, t_data, I_data):
         with tf.GradientTape() as tape:
-            total_loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale)
+            total_loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale, smooth_beta)
         grads = tape.gradient(total_loss, model.trainable_variables)
         optm.apply_gradients(zip(grads, model.trainable_variables))
         return total_loss, loss_dict
 
     @tf.function
     def test_step(t_col, t_data, I_data):
-        total_loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale)
+        total_loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale, smooth_beta)
         return total_loss, loss_dict
 
     ### Training loop
@@ -273,42 +295,52 @@ for beta_true in beta_values:
     plt.plot(train_loss_record)
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
-    plt.title(f'Training Loss (β={beta_true})90/10 split')
+    plt.title(f'Training Loss ({label}) 90/10 split')
     plt.yscale('log')
     plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_beta_{beta_true}_90_10.png'))
-    plt.show()
+    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_90_10.png'))
+
+    ### Un-normalise time and infections for plotting
+    days_total = 100
+    N_total = 100001
+
+    t_data_unnorm  = t_data_np  * days_total
+    t_train_unnorm = t_train_np * days_total
+    t_test_unnorm  = t_test_np  * days_total
+
+    I_pred_unnorm  = I_pred_np  * N_total
+    I_train_unnorm = I_train_np * N_total
+    I_test_unnorm  = I_test_np  * N_total
 
     ### Plot PINN prediction vs observed
     plt.figure(figsize=(14, 6))
-    plt.plot(t_data_np, I_pred_np, color="#ff7ee3", linewidth=2, label='Infected - PINN prediction')
-    plt.plot(t_train_np, I_train_np, color="#004F94", linewidth=2, label='Infected- data')
-    plt.plot(t_test_np, I_test_np, color="#004F94", linewidth=2)
-    plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
-    plt.xlabel('Normalised time')
-    plt.ylabel('Infected (normalised)')
-    plt.title(f'PINN observed vs predicted (β={beta_true})90/10 split')
+    plt.plot(t_data_unnorm, I_pred_unnorm, color="#ff7ee3", linewidth=2, label='Infected - PINN prediction')
+    plt.plot(t_train_unnorm, I_train_unnorm, color="#004F94", linewidth=2, label='Infected - data')
+    plt.plot(t_test_unnorm, I_test_unnorm, color="#004F94", linewidth=2)
+    plt.axvline(x=t_train_unnorm[-1], color='gray', linestyle='--', label='Train/Test Split')
+    plt.xlabel('Days')
+    plt.ylabel('Number of infected individuals')
+    plt.title(f'PINN prediction {label} - 90/10 split)')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_beta_constant_{beta_true}_90_10.png'))
-    plt.show()
+    plt.savefig(os.path.join(output_dir, f'PINN_beta_{label}_90_10.png'))
 
     ### Plot estimated beta over time
     t_plot = np.linspace(0.0, 1.0, 500)
     t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1, 1), dtype=tf.float32)
     _, _, _, _, beta_pred = model.predict(t_plot_tensor)
+    t_plot_unnorm = t_plot * days_total
 
     plt.figure(figsize=(8, 5))
-    plt.plot(t_plot, beta_pred.flatten(), 'g-', linewidth=2, label='β(t) estimated')
-    plt.axhline(y=beta_true, color='gray', linestyle='--', linewidth=1.5, label=f'β true = {beta_true}')
-    plt.xlabel('Normalised time')
+    plt.plot(t_plot_unnorm, beta_pred.flatten(), 'g-', linewidth=2, label='β(t) estimated')
+    if beta_true is not None:
+        plt.axhline(y=beta_true, color='gray', linestyle='--', linewidth=1.5,
+                label=f'β true = {beta_true}')
+    plt.xlabel('Days')
     plt.ylabel('β(t)')
     plt.ylim(0, 1)
-    plt.title(f'Estimated β(t) vs true β (β={beta_true})90/10 split')
+    plt.title(f'Estimated β(t) vs true β ({label}) 90/10 split')
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{beta_true}_90_10.png'))
-    plt.show()
-
-    print(f"Finished beta = {beta_true}")
+    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{label}_90_10.png'))

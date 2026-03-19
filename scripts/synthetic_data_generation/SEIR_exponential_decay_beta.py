@@ -10,10 +10,10 @@ N = 100001
 days = 100
 
 ### Parameters
-sigma, gamma = 0.1, 0.1
+sigma, gamma = 0.25, 0.25
 
 beta_c = 1.0
-beta_1 = 0.5
+beta_1 = 0.8
 Lambda = 0.1
 
 def beta_t(t, beta_c, beta_1, Lambda):

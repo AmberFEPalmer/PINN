@@ -14,7 +14,7 @@ N = 100001
 days = 100
 
 ### Parameters
-beta, sigma, gamma = 0.3, 0.1, 0.1
+beta, sigma, gamma = 0.75, 0.25, 0.25
 
 t = np.linspace(0, days, days + 1)
 K = 5
@@ -119,5 +119,5 @@ SEIR_time_varying_data = pd.DataFrame({"time": t_norm,"I": I_norm,})
 
 print(SEIR_time_varying_data)
 
-csv_path = os.path.join(data_folder, "SEIR_time_varying_results.csv")
+csv_path = os.path.join(data_folder, "SEIR_beta_spline.csv")
 SEIR_time_varying_data.to_csv(csv_path, index=False)

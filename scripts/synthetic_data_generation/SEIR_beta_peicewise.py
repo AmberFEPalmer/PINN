@@ -11,10 +11,11 @@ days = 100
 t = np.linspace(0, days, days + 1)
 
 ### Parameters
-sigma, gamma = 0.1, 0.1
+sigma, gamma = 0.25, 0.25
+
 ### Initial beta and new beta after day 30
-beta0 = 0.8
-beta1 = 0.6
+beta0 = 0.75
+beta1 = 0.55
 change_day = 30
 beta_t = np.where(t < change_day, beta0, beta1)
 

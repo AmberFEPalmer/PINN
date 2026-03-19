@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-import random
 from tensorflow.keras.layers import Dense, Input, Lambda
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
@@ -12,12 +11,34 @@ import os
 data_folder = os.path.join("..", "..", "data")
 output_dir = "../../png_files"
 
-beta_values = [0.75, 0.5, 0.4]
+### Define scenarios to run
+scenarios = [
+    ### Constant-beta scenarios (one entry per beta value)
+    {"label": "beta_0.75", "csv": "SEIR_data_beta_0.75.csv","beta_true": 0.75, "smooth_beta": True},
+    {"label": "beta_0.5", "csv": "SEIR_data_beta_0.5.csv", "beta_true": 0.5, "smooth_beta": True},
+    {"label": "beta_0.4","csv": "SEIR_data_beta_0.4.csv","beta_true": 0.4, "smooth_beta": True},
+    ### Time-varying beta scenarios
+    {"label": "beta_piecewise","csv": "SEIR_beta_peicewise.csv","beta_true": None, "smooth_beta": False},
+    {"label": "beta_spline","csv": "SEIR_beta_spline.csv", "beta_true": None, "smooth_beta": False},
+    {"label": "beta_exp_decay","csv": "SEIR_beta_exponential_decay_results.csv", "beta_true": None, "smooth_beta": False},
+]
 
-for beta_true in beta_values:
+### Gaussian noise scenarios (1% – 20%), beta_true = 0.75 (the ground truth used to generate the data)
+for noise_percent in range(1, 21):
+    scenarios.append({
+        "label":      f"Gaussian_noise_{noise_percent}percent",
+        "csv":        f"SEIR_Gaussian_noise_{noise_percent}percent.csv",
+        "beta_true":  0.75,
+        "smooth_beta": False,
+    })
+
+for scenario in scenarios:
+    label     = scenario["label"]
+    csv_file  = scenario["csv"]
+    beta_true = scenario["beta_true"]   # None for time-varying scenarios
 
     print(f"\n{'='*50}")
-    print(f"Running PINN for beta = {beta_true}")
+    print(f"Running PINN for scenario: {label}")
     print(f"{'='*50}")
 
     ### Load the CSV file for this beta
@@ -32,7 +53,7 @@ for beta_true in beta_values:
     t_data = t_data[:N_obs].reshape(-1, 1)
     I_data = I_data.reshape(-1, 1)
     ### Generate training and testing data 
-    split = int(0.8 * N_obs) 
+    split = int(0.9 * N_obs) 
     t_train = t_data[:split] ### take all elements from 0 up to "split"
     I_train = I_data[:split]
     t_test  = t_data[split:] ### take all elements from "split" to the end
@@ -45,6 +66,8 @@ for beta_true in beta_values:
     ### Need to convert from an array to a tensor for neural network
     t_train_tensor = tf.convert_to_tensor(t_train, dtype=tf.float32)
     I_train_tensor = tf.convert_to_tensor(I_train, dtype=tf.float32)
+
+    N_total = 100001 
 
     ### Define PINN
     ### L2 regularisation for hidden layers -> helps to prevent overfitting
@@ -114,7 +137,7 @@ for beta_true in beta_values:
     R0 = tf.constant(0.0, dtype=tf.float32)
 
     ### Define loss function for PINN
-    def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
+    def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale, smooth_beta=True):
         
         ### if t_col is a 1D array it is reshaped to a column vector
         if len(t_col.shape) == 1:t_col = tf.reshape(t_col, (-1, 1))
@@ -141,7 +164,7 @@ for beta_true in beta_values:
         dR_dt = tape.gradient(R, t_col) 
         
         d_beta_dt = tape.gradient(beta, t_col)
-        beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt))
+        beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt)) if smooth_beta else 0.0
         
         del tape
 
@@ -221,17 +244,19 @@ for beta_true in beta_values:
 
     trainable_vars = model.trainable_variables 
 
+    smooth_beta = scenario["smooth_beta"]
+    
     @tf.function
     def train_step(t_col, t_data, I_data):
         with tf.GradientTape() as tape:
-            loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale)
+            loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale, smooth_beta)
         grads = tape.gradient(loss, model.trainable_variables)
         optm.apply_gradients(zip(grads, model.trainable_variables))
         return loss, loss_dict
     
     @tf.function
     def test_step(t_col, t_data, I_data):
-        return loss_function(t_col, t_data, I_data, model, I_scale)
+        return loss_function(t_col, t_data, I_data, model, I_scale, smooth_beta)
     
     print("Starting training...")
     
@@ -279,7 +304,7 @@ for beta_true in beta_values:
     plt.title(f'Training Loss (β={beta_true})all learnable parameters')
     plt.yscale('log')
     plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_beta_{beta_true}all_learnable_parameters80_20.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_beta_{beta_true}all_learnable_parameters90_10.png'))
     plt.show()
 
     ### Plot PINN prediction vs observed
@@ -290,11 +315,11 @@ for beta_true in beta_values:
     plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
     plt.xlabel('Normalised time')
     plt.ylabel('Infected (normalised)')
-    plt.title(f'PINN prediction (β={beta_true} - all learnable parameters 80/20 split)')
+    plt.title(f'PINN prediction (β={beta_true} - all learnable parameters 90/10 split)')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_beta_{beta_true}all_learnable_parameters80_20.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_beta_{beta_true}all_learnable_parameters90_10.png'))
     plt.show()
 
     ### Plot estimated beta over time
@@ -308,10 +333,10 @@ for beta_true in beta_values:
     plt.xlabel('Normalised time')
     plt.ylabel('β(t)')
     plt.ylim(0, 1)
-    plt.title(f'Estimated β(t) vs true β (β={beta_true}) all learnable parameters 80/20 split')
+    plt.title(f'Estimated β(t) vs true β (β={beta_true}) all learnable parameters 90/10 split')
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{beta_true}all_learnable_parameters80_20.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{beta_true}all_learnable_parameters90_10.png'))
     plt.show()
 
     print(f"Finished beta = {beta_true}")
