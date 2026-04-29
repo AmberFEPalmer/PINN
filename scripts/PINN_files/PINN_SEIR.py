@@ -12,6 +12,11 @@ I_data = np.load("../../data/I_data_study.npy").reshape(-1, 1)
 t_data = t_data[:93]
 I_data = I_data[:93]
 
+t_min = t_data.min()
+t_max_global = t_data.max()
+
+t_data = (t_data - t_min) / (t_max_global - t_min)
+
 N_total_points = len(t_data)
 print(f"Total weekly points loaded: {N_total_points}")
 assert 85 < N_total_points <= 93, \
@@ -24,10 +29,10 @@ assert 85 < N_total_points <= 93, \
 def create_pinn_model():
     t_input = Input(shape=(1,), name='time_input')
 
-    ### SEIR —> 3 hidden layers, 100 neurons, tanh activation
-    seir = Dense(100, activation='tanh')(t_input)
-    seir = Dense(100, activation='tanh')(seir)
-    seir = Dense(100, activation='tanh')(seir)
+    ### SEIR —> 3 hidden layers, 50 neurons, tanh activation
+    seir = Dense(50, activation='tanh')(t_input)
+    seir = Dense(50, activation='tanh')(seir)
+    seir = Dense(50, activation='tanh')(seir)
 
     ### SEIR compartment outputs (softplus keeps values non-negative)
     S = Dense(1, activation='softplus', name='S')(seir)
@@ -36,9 +41,9 @@ def create_pinn_model():
     R = Dense(1, activation='softplus', name='R')(seir)
 
     ### Separate beta sub-network —> 3 hidden layers, 100 neurons, tanh
-    beta_h = Dense(100, activation='tanh')(t_input)
-    beta_h = Dense(100, activation='tanh')(beta_h)
-    beta_h = Dense(100, activation='tanh')(beta_h)
+    beta_h = Dense(50, activation='tanh')(t_input)
+    beta_h = Dense(50, activation='tanh')(beta_h)
+    beta_h = Dense(50, activation='tanh')(beta_h)
     beta   = Dense(1,   activation='softplus', name='beta')(beta_h)
 
     return Model(inputs=t_input, outputs=[S, E, I, R, beta])
@@ -76,11 +81,12 @@ def compute_loss(t_col, t_data_loss, I_data_loss, net, t_max, I0, E0, S0, R0=0.0
     beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt))
 
     ### Physics-informed loss - mean squared error
+    T = t_max
     ode_loss = (
-        tf.reduce_mean(tf.square(dS_dt - t_max * (-beta * S * I))) +
-        tf.reduce_mean(tf.square(dE_dt - t_max * (beta * S * I - sigma * E))) +
-        tf.reduce_mean(tf.square(dI_dt - t_max * (sigma * E - gamma * I))) +
-        tf.reduce_mean(tf.square(dR_dt - t_max * (gamma * I)))
+        tf.reduce_mean(tf.square(dS_dt - T * (-beta * S * I))) +
+        tf.reduce_mean(tf.square(dE_dt - T * (beta * S * I - sigma * E))) +
+        tf.reduce_mean(tf.square(dI_dt - T * (sigma * E - gamma * I))) +
+        tf.reduce_mean(tf.square(dR_dt - T * (gamma * I)))
     )
 
     ### Initial condition loss
@@ -100,11 +106,10 @@ def compute_loss(t_col, t_data_loss, I_data_loss, net, t_max, I0, E0, S0, R0=0.0
     data_loss = tf.reduce_mean(tf.square(I_pred - I_data_loss))
 
     ### Total loss 
-    total = (100.0   * data_loss +
-             1.0   * ode_loss +
+    total = (1.0   * data_loss +
+             0.01   * ode_loss +
              1.0 * ic_loss +
-             5.0 * conservation_loss +
-             1.0 * beta_smooth_loss)
+             1.0 * conservation_loss)
 
     return total, {
         "data_loss":         data_loss,
@@ -125,7 +130,7 @@ def train_window(t_train, I_train, t_max, n_iter=100_000):
     R0 = 0.0
 
     ### 1000 collocation points evenly covering the training window
-    t_col_np     = np.linspace(0.0, float(t_train[-1]), 1000).reshape(-1, 1)
+    t_col_np     = np.linspace(0.0, float(t_train[-1]), 100).reshape(-1, 1)
     
     ### Convert arrays to tensors
     t_col_tensor = tf.convert_to_tensor(t_col_np, dtype=tf.float32)
@@ -152,7 +157,7 @@ def train_window(t_train, I_train, t_max, n_iter=100_000):
 ### Rolling window forecasting
 First_train_weeks = 17   ### initial window uses weeks 1–17
 Forecast_horizon  = 4    ### forecast 1, 2, 3, 4 weeks ahead
-N_ITER = 100_000
+N_ITER = 50_000
 
 ### Storage dictionaries
 all_predictions  = {}   ### predicted I 

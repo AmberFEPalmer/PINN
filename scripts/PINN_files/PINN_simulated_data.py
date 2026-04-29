@@ -8,68 +8,98 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import regularizers
 import pandas as pd
 import os
-
+ 
 data_folder = os.path.join("..", "..", "data")
 output_dir = "../../png_files"
-
+ 
+### Accumulate metrics across all scenarios
+all_metrics = []
+ 
 ### Define scenarios to run
 scenarios = [
     ### Constant-beta scenarios (one entry per beta value)
-    {"label": "beta_0.75", "csv": "SEIR_data_beta_0.75.csv","beta_true": 0.75, "smooth_beta": True},
-    {"label": "beta_0.5", "csv": "SEIR_data_beta_0.5.csv", "beta_true": 0.5, "smooth_beta": True},
-    {"label": "beta_0.4","csv": "SEIR_data_beta_0.4.csv","beta_true": 0.4, "smooth_beta": True},
+    {"label": "beta_0.75", "csv": "SEIR_data_beta_0.75.csv", "beta_true": 0.75, "smooth_beta": True},
+    {"label": "beta_0.5",  "csv": "SEIR_data_beta_0.5.csv",  "beta_true": 0.5,  "smooth_beta": True},
+    {"label": "beta_0.4",  "csv": "SEIR_data_beta_0.4.csv",  "beta_true": 0.4,  "smooth_beta": True},
     ### Time-varying beta scenarios
-    {"label": "beta_piecewise","csv": "SEIR_beta_peicewise.csv","beta_true": None, "smooth_beta": False},
-    {"label": "beta_spline","csv": "SEIR_beta_spline.csv", "beta_true": None, "smooth_beta": False},
-    {"label": "beta_exp_decay","csv": "SEIR_beta_exponential_decay_results.csv", "beta_true": None, "smooth_beta": False},
+    {"label": "beta_piecewise", "csv": "SEIR_beta_peicewise.csv",                 "beta_true": None, "smooth_beta": False},
+    {"label": "beta_spline",    "csv": "SEIR_beta_spline.csv",                    "beta_true": None, "smooth_beta": False},
+    {"label": "beta_exp_decay", "csv": "SEIR_beta_exponential_decay_results.csv", "beta_true": None, "smooth_beta": False},
 ]
-
-### Gaussian noise scenarios (1% – 20%), beta_true = 0.75 (the ground truth used to generate the data)
+ 
+### Gaussian noise scenarios (1% - 20%), beta_true = 0.75
 for noise_percent in range(1, 21):
     scenarios.append({
         "label": f"Gaussian_noise_{noise_percent}percent",
-        "csv": f"SEIR_Gaussian_noise_{noise_percent}percent.csv",
+        "csv":   f"SEIR_Gaussian_noise_{noise_percent}percent.csv",
         "beta_true": 0.75,
         "smooth_beta": True,
     })
-
-### information for creating figures
+ 
+### Compute and report error metrics
+def compute_metrics(pred, true, name, label, compartment):
+    pred = np.array(pred).flatten()
+    true = np.array(true).flatten()
+ 
+    mae  = np.mean(np.abs(pred - true))
+    rmse = np.sqrt(np.mean((pred - true) ** 2))
+ 
+    mean_true    = np.mean(true)
+    peak_true    = np.max(true)
+    mae_pct      = 100 * mae  / (mean_true + 1e-8)
+    rmse_pct     = 100 * rmse / (mean_true + 1e-8)
+    peak_mae_pct = 100 * mae  / (peak_true + 1e-8)
+ 
+    print(f"{name}:")
+    print(f"  MAE   = {mae:.4f} ({mae_pct:.3f}%)")
+    print(f"  RMSE  = {rmse:.4f} ({rmse_pct:.3f}%)")
+    print(f"  Peak-normalised MAE = {peak_mae_pct:.3f}%\n")
+ 
+    return {
+        "scenario":     label,
+        "compartment":  compartment,
+        "MAE":          mae,
+        "RMSE":         rmse,
+        "MAE_pct":      mae_pct,
+        "RMSE_pct":     rmse_pct,
+        "peak_MAE_pct": peak_mae_pct,
+    }
+ 
+### Scenario loop
 for scenario in scenarios:
-    label = scenario["label"]
-    csv_file = scenario["csv"]
+    label     = scenario["label"]
+    csv_file  = scenario["csv"]
     beta_true = scenario["beta_true"]   # None for time-varying scenarios
-
+    smooth_beta = scenario["smooth_beta"]
+ 
     print(f"\n{'='*50}")
     print(f"Running PINN for scenario: {label}")
     print(f"{'='*50}")
-
+ 
     data_path = os.path.join(data_folder, csv_file)
     data = pd.read_csv(data_path)
-
+ 
     t_data = data["time"].values.reshape(-1, 1)
-    I_data = data["I"].values.reshape(-1, 1)  
-
+    I_data = data["I"].values.reshape(-1, 1)
+ 
     ### Train/test split
-    N_obs = len(I_data)
+    N_obs  = len(I_data)
     t_data = t_data[:N_obs].reshape(-1, 1)
     I_data = I_data.reshape(-1, 1)
-    ### Generate training and testing data 
-    split = int(0.9 * N_obs) 
-    t_train = t_data[:split] ### take all elements from 0 up to "split"
+ 
+    split   = int(0.8 * N_obs)
+    t_train = t_data[:split]
     I_train = I_data[:split]
-    t_test  = t_data[split:] ### take all elements from "split" to the end
+    t_test  = t_data[split:]
     I_test  = I_data[split:]
-
+ 
     I_scale = tf.constant(float(I_train.max()), dtype=tf.float32)
-
-    N_total = 100001 
-
-    ### Convert to tensors (multi dimensional arrays)
-    ### Array = objects all of the same type
-    ### Need to convert from an array to a tensor for neural network
+ 
+    N_total = 100001
+ 
     t_train_tensor = tf.convert_to_tensor(t_train, dtype=tf.float32)
     I_train_tensor = tf.convert_to_tensor(I_train, dtype=tf.float32)
-
+ 
     ### Define PINN
     ### L2 regularisation for hidden layers -> helps to prevent overfitting
     ### Add penalty proportional to the sum of squared coefficients to the loss function
@@ -77,15 +107,13 @@ for scenario in scenarios:
     ### https://keras.io/api/layers/regularizers/
     ### https://developers.google.com/machine-learning/crash-course/overfitting/regularization
     def create_pinn_model():
-        ### Input layer = time 
         t_input = Input(shape=(1,), name='time_input')
-
-        ### 3 Hidden layers, 50 neurons each , tanh activation (tanh = non-linear + smooth)
-        ### 3 hidden layers with 50 neurons to match Qian et al. 2025
+ 
+        ### SEIR subnet — 3 hidden layers, 50 neurons, tanh (Qian et al. 2025)
         seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
         seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(seir)
         seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(seir)
-
+ 
         ### SEIR outputs 
         ### 4 output layers
         ### No activation function
@@ -93,38 +121,36 @@ for scenario in scenarios:
         E = Dense(1, activation="softplus", name='E')(seir)
         I = Dense(1, activation="softplus", name='I')(seir)
         R = Dense(1, activation="softplus", name='R')(seir)
-
+ 
         ### Time-varying beta 
         ### beta = softplus activation -> allows it to be greater than 1
         ### 3 hidden layers, 50 neurons, tanh activation
         beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
-        beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)   
         beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
-        log_beta = Dense(1, activation=None, name='log_beta')(beta_hidden) 
-
+        beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
+        
         ### Beta outputs
         ### One output layer
-        ### No activation function
-        beta = Lambda(lambda x: tf.exp(x), name='beta')(log_beta)  
-
-        model = Model(inputs=t_input, outputs=[S, E, I, R, beta])
-        return model
-
+        ### No activation function on log_beta, then exponentiate to ensure positivity
+        log_beta    = Dense(1, activation=None, name='log_beta')(beta_hidden)
+        beta        = Lambda(lambda x: tf.exp(x), name='beta')(log_beta)
+ 
+        return Model(inputs=t_input, outputs=[S, E, I, R, beta])
+ 
     ### Fresh model for each beta scenario
     tf.keras.backend.clear_session()
     model = create_pinn_model()
-    ### Print model achitecture
     model.summary()
-
-    ### Define initial conditions
-    S0 = tf.constant(100000/100001, dtype=tf.float32)
-    E0 = tf.constant(0.0, dtype=tf.float32)
-    I0 = tf.constant(1/100001, dtype=tf.float32)
-    R0 = tf.constant(0.0, dtype=tf.float32)
-
-    ### Define loss function for PINN
+ 
+    ### Define intitial conditions
+    S0_fixed = tf.constant(100000/100001, dtype=tf.float32)
+    E0_fixed = tf.constant(0.0,           dtype=tf.float32)
+    I0_fixed = tf.constant(1/100001,      dtype=tf.float32)
+    R0_fixed = tf.constant(0.0,           dtype=tf.float32)
+ 
+    ### Loss function
     def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale, smooth_beta=True):
-        
+ 
         ### if t_col is a 1D array it is reshaped to a column vector
         if len(t_col.shape) == 1:t_col = tf.reshape(t_col, (-1, 1))
         
@@ -142,101 +168,90 @@ for scenario in scenarios:
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(t_col)
             S, E, I, R, beta = net(t_col)
-            
+ 
         ### Define parameters which don't vary over time
         ### Following what was done in Qian et al. 2025
-        sigma = tf.constant(0.25, dtype=tf.float32, name='sigma')
-        gamma = tf.constant(0.25, dtype=tf.float32, name='gamma')
-        
-        ### Compute derivatives e.g. dS/dt
-        dS_dt = tape.gradient(S, t_col) 
-        dE_dt = tape.gradient(E, t_col) 
-        dI_dt = tape.gradient(I, t_col) 
-        dR_dt = tape.gradient(R, t_col) 
-        
-        d_beta_dt = tape.gradient(beta, t_col)
+        sigma = tf.constant(0.25, dtype=tf.float32)
+        gamma = tf.constant(0.25, dtype=tf.float32)
+ 
+        ### Compute derivatives e.g. dS/dt 
+        ### Use automatic differentiation
+        dS_dt = tape.gradient(S, t_col)
+        dE_dt = tape.gradient(E, t_col)
+        dI_dt = tape.gradient(I, t_col)
+        dR_dt = tape.gradient(R, t_col)
+ 
+        d_beta_dt        = tape.gradient(beta, t_col)
         beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt)) if smooth_beta else 0.0
-        
+ 
         del tape
-
+ 
         ### SEIR equations 
-        days = 100.0
-        T = tf.constant(days, dtype=tf.float32)
+        T = tf.constant(100.0, dtype=tf.float32)
         dS_dt_physics = T * (-beta * S * I)
         dE_dt_physics = T * (beta * S * I - sigma * E)
         dI_dt_physics = T * (sigma * E - gamma * I)
         dR_dt_physics = T * (gamma * I)
-    
-        ### Physics-informed loss - mean squared error
-        loss_S = tf.reduce_mean(tf.square(dS_dt - dS_dt_physics))
-        loss_E = tf.reduce_mean(tf.square(dE_dt - dE_dt_physics))
-        loss_I = tf.reduce_mean(tf.square(dI_dt - dI_dt_physics))
-        loss_R = tf.reduce_mean(tf.square(dR_dt - dR_dt_physics))
-
+ 
+        ### Physics informed loss
         ODE_loss = (
-            1.0 * loss_S +
-            1.0 * loss_E +
-            1.0 * loss_I +
-            1.0 * loss_R 
+            tf.reduce_mean(tf.square(dS_dt - dS_dt_physics)) +
+            tf.reduce_mean(tf.square(dE_dt - dE_dt_physics)) +
+            tf.reduce_mean(tf.square(dI_dt - dI_dt_physics)) +
+            tf.reduce_mean(tf.square(dR_dt - dR_dt_physics))
         )
-
-        ### Initial condition loss (evaluate at t=0)
-        t_zero = tf.constant([[0.0]], dtype=tf.float32) 
+ 
+         ### Initial condition loss (evaluate at t=0)
+        t_zero = tf.constant([[0.0]], dtype=tf.float32)
         S_0, E_0, I_0, R_0, _ = net(t_zero)
-        
         Initial_condition_loss = tf.reduce_mean(
             tf.square(S_0 - S0_fixed) +
             tf.square(E_0 - E0_fixed) +
             tf.square(I_0 - I0_fixed) +
-            tf.square(R_0 - R0_fixed) )
-        
+            tf.square(R_0 - R0_fixed)
+        )
+ 
         ### constrain SEIR equations to equal 1
         S, E, I, R, beta = net(t_col)
         conservation_loss = tf.reduce_mean(tf.square(S + E + I + R - 1.0))
-        
+
         ### Data loss 
-        t_data_normalised = t_data_loss 
-        _, _, I_pred, _, _ = net(t_data_normalised)
+        _, _, I_pred, _, _ = net(t_data_loss)
         data_loss = tf.reduce_mean(tf.square((I_pred - I_data_loss) / I_scale))
-        
+ 
         ### Total loss
-        total_loss = 1.0 * data_loss+ 0.1*ODE_loss + 1.0 * Initial_condition_loss + 1.0 * conservation_loss + 0.1*beta_smooth_loss
-        
+        total_loss = (
+            1.0 * data_loss +
+            0.1 * ODE_loss +
+            1.0 * Initial_condition_loss +
+            1.0 * conservation_loss +
+            0.1 * beta_smooth_loss
+        )
+ 
         return total_loss, {
-            "data_loss": data_loss,
-            "IC_loss": Initial_condition_loss,
+            "data_loss":         data_loss,
+            "IC_loss":           Initial_condition_loss,
             "conservation_loss": conservation_loss,
-            "ODE_loss": ODE_loss,
+            "ODE_loss":          ODE_loss,
         }
-
-    S0_fixed = S0
-    E0_fixed = E0
-    I0_fixed = I0
-    R0_fixed = R0
-
+ 
     ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
-    ### learning rate scheduler added (not in original paper)
+    ### Optimiser and collocation points 
     optm = Adam(learning_rate=0.001)
-
-    ### Collocation points for physics 
-    n_collocation = 1000
-    t_col_uniform = np.linspace(0, 1, n_collocation).reshape(-1, 1)
-    t_col_tensor = tf.convert_to_tensor(t_col_uniform, dtype=tf.float32)
-
+ 
+    ### Collocation points for physics
+    n_collocation  = 1000
+    t_col_tensor   = tf.convert_to_tensor(
+        np.linspace(0, 1, n_collocation).reshape(-1, 1), dtype=tf.float32
+    )
+ 
     ### ensure all inputs are float32 for training
     t_train = tf.convert_to_tensor(t_train, dtype=tf.float32)
     I_train = tf.convert_to_tensor(I_train, dtype=tf.float32)
-    t_test = tf.convert_to_tensor(t_test, dtype=tf.float32)
-    I_test = tf.convert_to_tensor(I_test, dtype=tf.float32)
-
+    t_test  = tf.convert_to_tensor(t_test,  dtype=tf.float32)
+    I_test  = tf.convert_to_tensor(I_test,  dtype=tf.float32)
+ 
     ### Training loop
-    train_loss_record = []
-    test_loss_record = []  
-
-    trainable_vars = model.trainable_variables 
-
-    smooth_beta = scenario["smooth_beta"]
-
     @tf.function
     def train_step(t_col, t_data, I_data):
         with tf.GradientTape() as tape:
@@ -244,103 +259,171 @@ for scenario in scenarios:
         grads = tape.gradient(total_loss, model.trainable_variables)
         optm.apply_gradients(zip(grads, model.trainable_variables))
         return total_loss, loss_dict
-
+ 
     @tf.function
     def test_step(t_col, t_data, I_data):
-        total_loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale, smooth_beta)
-        return total_loss, loss_dict
-
-    ### Training loop
+        return loss_function(t_col, t_data, I_data, model, I_scale, smooth_beta)
+ 
     train_loss_record = []
-    test_loss_record = []
-
+    test_loss_record  = []
+ 
     print("Starting training...")
-    ### 50,000 iterations (Qian et al. 2025)
     for itr in range(50000):
         train_loss, train_loss_dict = train_step(t_col_tensor, t_train, I_train)
         train_loss_record.append(float(train_loss))
-
+ 
         test_loss, test_loss_dict = test_step(t_col_tensor, t_test, I_test)
-
+        test_loss_record.append(float(test_loss))
+ 
         if itr % 1000 == 0:
             print(
-                f"Iteration {itr}\n"
-                f"Train Loss: {float(train_loss):.6f}, "
-                f"Test Loss: {float(test_loss):.6f}\n"
-                f"Data: {float(train_loss_dict['data_loss']):.6f}, "
-                f"IC: {float(train_loss_dict['IC_loss']):.6f}, "
-                f"Conservation: {float(train_loss_dict['conservation_loss']):.6f}, "
+                f"Iteration {itr} | "
+                f"Train: {float(train_loss):.6f}  Test: {float(test_loss):.6f} | "
+                f"Data: {float(train_loss_dict['data_loss']):.6f}  "
+                f"IC: {float(train_loss_dict['IC_loss']):.6f}  "
+                f"Conservation: {float(train_loss_dict['conservation_loss']):.6f}  "
                 f"ODE: {float(train_loss_dict['ODE_loss']):.6f}"
             )
-
-    ### Predictions
+ 
+    ### Predictions for plotting and metrics
     t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
-    _, _, I_pred, _, _ = model(t_tensor)
-
+    S_pred, E_pred, I_pred, R_pred, _ = model(t_tensor)
+ 
     def to_numpy_flat(arr):
-        if hasattr(arr, 'numpy'):
-            return arr.numpy().flatten()
-        else:
-            return arr.flatten()
-
+        return arr.numpy().flatten() if hasattr(arr, 'numpy') else arr.flatten()
+ 
     t_data_np  = to_numpy_flat(t_data)
     I_pred_np  = to_numpy_flat(I_pred)
     t_train_np = to_numpy_flat(t_train)
     I_train_np = to_numpy_flat(I_train)
     t_test_np  = to_numpy_flat(t_test)
     I_test_np  = to_numpy_flat(I_test)
-
-    ### Plot training loss
-    plt.figure(figsize=(10, 8))
-    plt.plot(train_loss_record)
-    plt.xlabel('Iteration')
-    plt.ylabel('Loss')
-    plt.title(f'Training Loss ({label}) 90/10 split')
-    plt.yscale('log')
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_90_10.png'))
-
-    ### Un-normalise time and infections for plotting
+ 
+    ### Un-normalise time and counts for plotting and metrics
     days_total = 100
-    N_total = 100001
-
+    N_total    = 100001
+ 
     t_data_unnorm  = t_data_np  * days_total
     t_train_unnorm = t_train_np * days_total
     t_test_unnorm  = t_test_np  * days_total
-
+ 
     I_pred_unnorm  = I_pred_np  * N_total
     I_train_unnorm = I_train_np * N_total
     I_test_unnorm  = I_test_np  * N_total
-
-    ### Plot PINN prediction vs observed
-    plt.figure(figsize=(14, 6))
-    plt.plot(t_data_unnorm, I_pred_unnorm, color="#ff7ee3", linewidth=2, label='Infected - PINN prediction')
-    plt.plot(t_train_unnorm, I_train_unnorm, color="#004F94", linewidth=2, label='Infected - data')
-    plt.plot(t_test_unnorm, I_test_unnorm, color="#004F94", linewidth=2)
-    plt.axvline(x=t_train_unnorm[-1], color='gray', linestyle='--', label='Train/Test Split')
-    plt.xlabel('Days')
-    plt.ylabel('Number of infected individuals')
-    plt.title(f'PINN prediction {label} - 90/10 split)')
+ 
+    S_rec         = 1.0 - to_numpy_flat(E_pred) - to_numpy_flat(I_pred) - to_numpy_flat(R_pred)
+    S_rec_unnorm  = S_rec                       * N_total
+    E_pred_unnorm = to_numpy_flat(E_pred)       * N_total
+    R_pred_unnorm = to_numpy_flat(R_pred)       * N_total
+ 
+    ### Training loss
+    plt.figure(figsize=(10, 8))
+    plt.plot(train_loss_record, label='Train loss')
+    plt.plot(test_loss_record,  label='Test loss')
+    plt.xlabel('Iteration')
+    plt.ylabel('Loss')
+    plt.title(f'Training Loss ({label}) 80/20 split')
+    plt.yscale('log')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_beta_{label}_90_10.png'))
-
-    ### Plot estimated beta over time
-    t_plot = np.linspace(0.0, 1.0, 500)
-    t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1, 1), dtype=tf.float32)
+    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_80_20.png'))
+    plt.close()
+ 
+    ### PINN prediction vs observed
+    plt.figure(figsize=(14, 6))
+    plt.plot(t_data_unnorm,  I_pred_unnorm,  color="#ff7ee3", linewidth=2, label='Infected - PINN prediction')
+    plt.plot(t_train_unnorm, I_train_unnorm, color="#004F94", linewidth=2, label='Infected - data')
+    plt.plot(t_test_unnorm,  I_test_unnorm,  color="#004F94", linewidth=2)
+    plt.axvline(x=t_train_unnorm[-1], color='gray', linestyle='--', label='Train/Test Split')
+    plt.xlabel('Days')
+    plt.ylabel('Number of infected individuals')
+    plt.title(f'PINN prediction {label} - 80/20 split')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'PINN_beta_{label}_80_20.png'))
+    plt.close()
+ 
+    ### Estimated beta
+    t_plot        = np.linspace(0.0, 1.0, 500).reshape(-1, 1)
+    t_plot_tensor = tf.convert_to_tensor(t_plot, dtype=tf.float32)
     _, _, _, _, beta_pred = model.predict(t_plot_tensor)
-    t_plot_unnorm = t_plot * days_total
-
+    t_plot_unnorm = t_plot.flatten() * days_total
+ 
     plt.figure(figsize=(8, 5))
     plt.plot(t_plot_unnorm, beta_pred.flatten(), 'g-', linewidth=2, label='β(t) estimated')
     if beta_true is not None:
         plt.axhline(y=beta_true, color='gray', linestyle='--', linewidth=1.5,
-                label=f'β true = {beta_true}')
+                    label=f'β true = {beta_true}')
     plt.xlabel('Days')
     plt.ylabel('β(t)')
     plt.ylim(0, 1)
-    plt.title(f'Estimated β(t) vs true β ({label}) 90/10 split')
+    plt.title(f'Estimated β(t) vs true β ({label}) 80/20 split')
     plt.legend()
     plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{label}_90_10.png'))
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{label}_80_20.png'))
+    plt.close()
+ 
+    ### Susceptible
+    plt.figure(figsize=(14, 6))
+    plt.plot(t_data_unnorm, S_rec_unnorm, color="green", linewidth=2, label='Susceptible (PINN)')
+    if "S" in data.columns:
+        plt.plot(t_data_unnorm, data["S"].values.flatten() * N_total,
+                 'k--', linewidth=2, label='Susceptible (ground truth)')
+    plt.xlabel('Days'); plt.ylabel('Number of individuals')
+    plt.title(f'Susceptible population ({label})')
+    plt.legend(); plt.grid(True); plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'PINN_S_comparison_{label}.png'))
+    plt.close()
+ 
+    ### Exposed
+    plt.figure(figsize=(14, 6))
+    plt.plot(t_data_unnorm, E_pred_unnorm, color="orange", linewidth=2, label='Exposed (PINN)')
+    if "E" in data.columns:
+        plt.plot(t_data_unnorm, data["E"].values.flatten() * N_total,
+                 'k--', linewidth=2, label='Exposed (ground truth)')
+    plt.xlabel('Days'); plt.ylabel('Number of individuals')
+    plt.title(f'Exposed population ({label})')
+    plt.legend(); plt.grid(True); plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'PINN_E_comparison_{label}.png'))
+    plt.close()
+ 
+    ### Recovered
+    plt.figure(figsize=(14, 6))
+    plt.plot(t_data_unnorm, R_pred_unnorm, color="red", linewidth=2, label='Recovered (PINN)')
+    if "R" in data.columns:
+        plt.plot(t_data_unnorm, data["R"].values.flatten() * N_total,
+                 'k--', linewidth=2, label='Recovered (ground truth)')
+    plt.xlabel('Days'); plt.ylabel('Number of individuals')
+    plt.title(f'Recovered population ({label})')
+    plt.legend(); plt.grid(True); plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'PINN_R_comparison_{label}.png'))
+    plt.close()
+ 
+    ### Error metrics
+    print("\n── Compartment Error Metrics ─────────────────────")
+
+    I_true_unnorm = data["I"].values.flatten() * N_total
+ 
+    if "S" in data.columns:
+        S_true_unnorm = data["S"].values.flatten() * N_total
+        all_metrics.append(compute_metrics(S_rec_unnorm,  S_true_unnorm, "Susceptible", label, "S"))
+ 
+    if "E" in data.columns:
+        E_true_unnorm = data["E"].values.flatten() * N_total
+        all_metrics.append(compute_metrics(E_pred_unnorm, E_true_unnorm, "Exposed",     label, "E"))
+ 
+    all_metrics.append(compute_metrics(I_pred_unnorm, I_true_unnorm, "Infected", label, "I"))
+ 
+    if "R" in data.columns:
+        R_true_unnorm = data["R"].values.flatten() * N_total
+        all_metrics.append(compute_metrics(R_pred_unnorm, R_true_unnorm, "Recovered",   label, "R"))
+ 
+### Save evaluation metrics to CSV
+metrics_df = pd.DataFrame(all_metrics)
+metrics_df.to_csv(os.path.join(output_dir, "PINN_error_metrics_80_20.csv"), index=False)
+print("\nMetrics saved to PINN_error_metrics_80_20.csv")
+print(metrics_df.to_string(index=False))
+ 

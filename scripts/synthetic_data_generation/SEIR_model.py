@@ -73,6 +73,7 @@ for beta in beta_values:
     plt.title(f"SEIR model (β={beta})")
     plt.xlabel("Days")
     plt.ylabel("Number of people in each compartment")
+    plt.grid(True)
     plt.savefig(os.path.join(output_dir, f'SEIR_constant_beta_{beta}.png'))
     plt.show()
 
@@ -80,7 +81,25 @@ for beta in beta_values:
     t_norm = t / t.max()
 
     ### Export SEIR results to a csv file
-    SEIR_data = pd.DataFrame({"time": t_norm, "I": I_norm})
+    SEIR_data = pd.DataFrame({
+    "time": t_norm,
+    "S": S_norm,
+    "E": E_norm,
+    "I": I_norm,
+    "R": R_norm
+    })
     print(SEIR_data)
     csv_path = os.path.join(data_folder, f"SEIR_data_beta_{beta}.csv")
     SEIR_data.to_csv(csv_path, index=False)
+    
+    
+    from scipy.optimize import minimize
+
+def loss(params, t, I_data):
+    beta = params[0]
+    _, _, _, I_pred, _ = run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N)
+    I_pred_norm = I_pred / N
+    return np.mean((I_pred_norm - I_data)**2)
+
+result = minimize(loss, x0=[0.3], args=(t_norm, I_noisy))
+beta_est = result.x[0]

@@ -58,7 +58,6 @@ plt.plot(t, beta_values)
 plt.title("Time-varying transmission rate β(t)")
 plt.xlabel("Days")
 plt.ylabel("β(t)")
-plt.grid()
 plt.show()
 
 ### Normalize

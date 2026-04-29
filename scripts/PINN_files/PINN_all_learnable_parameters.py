@@ -26,34 +26,34 @@ scenarios = [
 ### Gaussian noise scenarios (1% – 20%), beta_true = 0.75 (the ground truth used to generate the data)
 for noise_percent in range(1, 21):
     scenarios.append({
-        "label":      f"Gaussian_noise_{noise_percent}percent",
-        "csv":        f"SEIR_Gaussian_noise_{noise_percent}percent.csv",
-        "beta_true":  0.75,
-        "smooth_beta": False,
+        "label": f"Gaussian_noise_{noise_percent}percent",
+        "csv": f"SEIR_Gaussian_noise_{noise_percent}percent.csv",
+        "beta_true": 0.75,
+        "smooth_beta": True,
     })
 
+### information for creating figures
 for scenario in scenarios:
-    label     = scenario["label"]
-    csv_file  = scenario["csv"]
+    label = scenario["label"]
+    csv_file = scenario["csv"]
     beta_true = scenario["beta_true"]   # None for time-varying scenarios
 
     print(f"\n{'='*50}")
     print(f"Running PINN for scenario: {label}")
     print(f"{'='*50}")
 
-    ### Load the CSV file for this beta
-    data_path = os.path.join(data_folder, f"SEIR_data_beta_{beta_true}.csv")
+    data_path = os.path.join(data_folder, csv_file)
     data = pd.read_csv(data_path)
 
     t_data = data["time"].values.reshape(-1, 1)
     I_data = data["I"].values.reshape(-1, 1)  
-   
+    
     ### Train/test split
     N_obs = len(I_data)
     t_data = t_data[:N_obs].reshape(-1, 1)
     I_data = I_data.reshape(-1, 1)
     ### Generate training and testing data 
-    split = int(0.9 * N_obs) 
+    split = int(0.7 * N_obs) 
     t_train = t_data[:split] ### take all elements from 0 up to "split"
     I_train = I_data[:split]
     t_test  = t_data[split:] ### take all elements from "split" to the end
@@ -304,8 +304,7 @@ for scenario in scenarios:
     plt.title(f'Training Loss (β={beta_true})all learnable parameters')
     plt.yscale('log')
     plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_beta_{beta_true}all_learnable_parameters90_10.png'))
-    plt.show()
+    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_all_learnable_parameters70_30.png'))
 
     ### Plot PINN prediction vs observed
     plt.figure(figsize=(14, 6))
@@ -315,28 +314,8 @@ for scenario in scenarios:
     plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
     plt.xlabel('Normalised time')
     plt.ylabel('Infected (normalised)')
-    plt.title(f'PINN prediction (β={beta_true} - all learnable parameters 90/10 split)')
+    plt.title(f'PINN prediction (β={beta_true} - all learnable parameters 70/30 split)')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_beta_{beta_true}all_learnable_parameters90_10.png'))
-    plt.show()
-
-    ### Plot estimated beta over time
-    t_plot = np.linspace(0.0, 1.0, 500)
-    t_plot_tensor = tf.convert_to_tensor(t_plot.reshape(-1, 1), dtype=tf.float32)
-    _, _, _, _, beta_pred, _, _ = model.predict(t_plot_tensor)
-
-    plt.figure(figsize=(8, 5))
-    plt.plot(t_plot, beta_pred.flatten(), 'g-', linewidth=2, label='β(t) estimated')
-    plt.axhline(y=beta_true, color='r', linestyle='--', linewidth=1.5, label=f'β true = {beta_true}')
-    plt.xlabel('Normalised time')
-    plt.ylabel('β(t)')
-    plt.ylim(0, 1)
-    plt.title(f'Estimated β(t) vs true β (β={beta_true}) all learnable parameters 90/10 split')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{beta_true}all_learnable_parameters90_10.png'))
-    plt.show()
-
-    print(f"Finished beta = {beta_true}")
+    plt.savefig(os.path.join(output_dir, f'PINN_{label}_all_learnable_parameters70_30.png'))
