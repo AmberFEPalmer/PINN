@@ -53,7 +53,7 @@ for scenario in scenarios:
     t_data = t_data[:N_obs].reshape(-1, 1)
     I_data = I_data.reshape(-1, 1)
     ### Generate training and testing data 
-    split = int(0.7 * N_obs) 
+    split = int(0.9 * N_obs) 
     t_train = t_data[:split] ### take all elements from 0 up to "split"
     I_train = I_data[:split]
     t_test  = t_data[split:] ### take all elements from "split" to the end
@@ -296,6 +296,24 @@ for scenario in scenarios:
     t_test_np  = to_numpy_flat(t_test)
     I_test_np  = to_numpy_flat(I_test)
 
+
+    ### Un-normalise time and counts for plotting and metrics
+    days_total = 100
+    N_total    = 100001
+ 
+    t_data_unnorm  = t_data_np  * days_total
+    t_train_unnorm = t_train_np * days_total
+    t_test_unnorm  = t_test_np  * days_total
+ 
+    I_pred_unnorm  = I_pred_np  * N_total
+    I_train_unnorm = I_train_np * N_total
+    I_test_unnorm  = I_test_np  * N_total
+ 
+    S_rec         = 1.0 - to_numpy_flat(E_pred) - to_numpy_flat(I_pred) - to_numpy_flat(R_pred)
+    S_rec_unnorm  = S_rec                       * N_total
+    E_pred_unnorm = to_numpy_flat(E_pred)       * N_total
+    R_pred_unnorm = to_numpy_flat(R_pred)       * N_total
+    
     ### Plot training loss
     plt.figure(figsize=(10, 8))
     plt.plot(train_loss_record)
@@ -304,18 +322,102 @@ for scenario in scenarios:
     plt.title(f'Training Loss (β={beta_true})all learnable parameters')
     plt.yscale('log')
     plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_all_learnable_parameters70_30.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_all_learnable_parameters90_10.png'))
 
-    ### Plot PINN prediction vs observed
+    ### PINN prediction vs observed
     plt.figure(figsize=(14, 6))
-    plt.plot(t_data_np, I_pred_np, color="#ff7ee3", linewidth=2, label='Infected - PINN prediction')
-    plt.plot(t_train_np, I_train_np, color="#004F94", linewidth=2, label='Infected - data')
-    plt.plot(t_test_np, I_test_np, color="#004F94", linewidth=2)
-    plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
-    plt.xlabel('Normalised time')
-    plt.ylabel('Infected (normalised)')
-    plt.title(f'PINN prediction (β={beta_true} - all learnable parameters 70/30 split)')
+    plt.plot(t_data_unnorm,  I_pred_unnorm,  color="#ff7ee3", linewidth=2, label='Infected - PINN prediction')
+    plt.plot(t_train_unnorm, I_train_unnorm, color="#004F94", linewidth=2, label='Infected - data')
+    plt.plot(t_test_unnorm,  I_test_unnorm,  color="#004F94", linewidth=2)
+    plt.axvline(x=t_train_unnorm[-1], color='gray', linestyle='--', label='Train/Test Split')
+    plt.xlabel('Days')
+    plt.ylabel('Number of infected individuals')
+    plt.title(f'PINN prediction all learnable parameters - 90/10 split')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_{label}_all_learnable_parameters70_30.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_beta_{label}_90_10.png'))
+    plt.close()
+ 
+    ### Estimated beta
+    t_plot        = np.linspace(0.0, 1.0, 500).reshape(-1, 1)
+    t_plot_tensor = tf.convert_to_tensor(t_plot, dtype=tf.float32)
+    _, _, _, _, beta_pred = model.predict(t_plot_tensor)
+    t_plot_unnorm = t_plot.flatten() * days_total
+ 
+    plt.figure(figsize=(8, 5))
+    plt.plot(t_plot_unnorm, beta_pred.flatten(), 'g-', linewidth=2, label='β(t) estimated')
+    if beta_true is not None:
+        plt.axhline(y=beta_true, color='gray', linestyle='--', linewidth=1.5,
+                    label=f'β true = {beta_true}')
+    plt.xlabel('Days')
+    plt.ylabel('β(t)')
+    plt.ylim(0, 1)
+    plt.title(f'Estimated β(t) vs true β ({label}) 90/10 split')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_beta_{label}_90_10.png'))
+    plt.close()
+ 
+    ### Susceptible
+    plt.figure(figsize=(14, 6))
+    plt.plot(t_data_unnorm, S_rec_unnorm, color="green", linewidth=2, label='Susceptible (PINN)')
+    if "S" in data.columns:
+        plt.plot(t_data_unnorm, data["S"].values.flatten() * N_total,
+                 'k--', linewidth=2, label='Susceptible (ground truth)')
+    plt.xlabel('Days'); plt.ylabel('Number of individuals')
+    plt.title(f'Susceptible population ({label})')
+    plt.legend(); plt.grid(True); plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_S_comparison_{label}.png'))
+    plt.close()
+ 
+    ### Exposed
+    plt.figure(figsize=(14, 6))
+    plt.plot(t_data_unnorm, E_pred_unnorm, color="orange", linewidth=2, label='Exposed (PINN)')
+    if "E" in data.columns:
+        plt.plot(t_data_unnorm, data["E"].values.flatten() * N_total,
+                 'k--', linewidth=2, label='Exposed (ground truth)')
+    plt.xlabel('Days'); plt.ylabel('Number of individuals')
+    plt.title(f'Exposed population ({label})')
+    plt.legend(); plt.grid(True); plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_E_comparison_{label}.png'))
+    plt.close()
+ 
+    ### Recovered
+    plt.figure(figsize=(14, 6))
+    plt.plot(t_data_unnorm, R_pred_unnorm, color="red", linewidth=2, label='Recovered (PINN)')
+    if "R" in data.columns:
+        plt.plot(t_data_unnorm, data["R"].values.flatten() * N_total,
+                 'k--', linewidth=2, label='Recovered (ground truth)')
+    plt.xlabel('Days'); plt.ylabel('Number of individuals')
+    plt.title(f'Recovered population ({label})')
+    plt.legend(); plt.grid(True); plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_R_comparison_{label}.png'))
+    plt.close()
+ 
+    ### Error metrics
+    print("\n── Compartment Error Metrics ─────────────────────")
+
+    I_true_unnorm = data["I"].values.flatten() * N_total
+ 
+    if "S" in data.columns:
+        S_true_unnorm = data["S"].values.flatten() * N_total
+        all_metrics.append(compute_metrics(S_rec_unnorm,  S_true_unnorm, "Susceptible", label, "S"))
+ 
+    if "E" in data.columns:
+        E_true_unnorm = data["E"].values.flatten() * N_total
+        all_metrics.append(compute_metrics(E_pred_unnorm, E_true_unnorm, "Exposed",     label, "E"))
+ 
+    all_metrics.append(compute_metrics(I_pred_unnorm, I_true_unnorm, "Infected", label, "I"))
+ 
+    if "R" in data.columns:
+        R_true_unnorm = data["R"].values.flatten() * N_total
+        all_metrics.append(compute_metrics(R_pred_unnorm, R_true_unnorm, "Recovered",   label, "R"))
+ 
+### Save evaluation metrics to CSV
+metrics_df = pd.DataFrame(all_metrics)
+metrics_df.to_csv(os.path.join(output_dir, "PINN_all_learnable_parameters_error_metrics_90_10.csv"), index=False)
+print("\nMetrics saved to PINN_all_learnable_parameters_error_metrics_90_10.csv")
+print(metrics_df.to_string(index=False))
+ 

@@ -5,30 +5,28 @@ import pandas as pd
 import os   
 
 ### Number of patches
-P = 2
+P = 5
 
 ### Initial conditions
-### 1 infected individual in patch one
-### No one infected in patch two
-### 50,000 people in each patch
-S0 = np.array([49999.0, 50000.0])
-E0 = np.array([0.0, 0.0])
-I0 = np.array([1.0, 0.0])   
-R0 = np.array([0.0, 0.0])
+S0 = np.full(P, 50000.0)
+E0 = np.zeros(P)
+I0 = np.zeros(P)
+R0 = np.zeros(P)
+
+### Seed infection in patch 1
+I0[0] = 1.0
+S0[0] -= 1.0
 
 N = S0 + E0 + I0 + R0
 
 ### Parameters
-beta = np.array([0.75, 0.5])   # different transmission per patch
+beta = np.linspace(0.6, 0.8, P)   # heterogeneous transmission rates
 sigma, gamma = 0.25, 0.25
 
-### Migration matrix (2x2)
-### Movement between patches
+### Migration matrix (10x10)
 m = 0.01
-M = np.array([
-    [-m,  m],
-    [ m, -m]
-])
+M = np.full((P, P), m / (P - 1))   # distribute outward flow evenly
+np.fill_diagonal(M, -m)
 
 ### Time
 t = 100
@@ -50,7 +48,7 @@ def ode_model(t, y):
     dI = sigma * E - gamma * I
     dR = gamma * I
 
-    ### Migration (matrix form)
+    ### Migration
     dS += M @ S
     dE += M @ E
     dI += M @ I
@@ -68,46 +66,48 @@ sol = solve_ivp(
     t_eval=t_eval
 )
 
-# Extract results
+### Extract results
 S = sol.y[0:P]
 E = sol.y[P:2*P]
 I = sol.y[2*P:3*P]
 R = sol.y[3*P:4*P]
 
-# Plot infected in both patches
-plt.figure(figsize=(10, 6))
-plt.plot(t_eval, I[0], label="Patch 1")
-plt.plot(t_eval, I[1], label="Patch 2")
+### Plot infected in all patches
+plt.figure(figsize=(12, 6))
+
+for i in range(P):
+    plt.plot(t_eval, I[i], label=f"Patch {i+1}")
+
 plt.xlabel("Days")
 plt.ylabel("Infected")
-plt.title("Two-patch SEIR (vectorized form)")
-plt.legend()
+plt.title("5-patch SEIR model")
+plt.legend(ncol=2)
 plt.grid(True)
 plt.show()
 
 ### Normalise time for PINN
 t_norm = t_eval / t_eval.max()
- 
+
 S_norm = S / N[:, None]
 E_norm = E / N[:, None]
 I_norm = I / N[:, None]
 R_norm = R / N[:, None]
- 
-### Export SEIR results to a csv file
-SEIR_metapopulation_data = pd.DataFrame({
-    "time": t_norm,
-    "S1": S_norm[0],
-    "S2": S_norm[1],
-    "E1": E_norm[0],
-    "E2": E_norm[1],
-    "I1": I_norm[0],
-    "I2": I_norm[1],
-    "R1": R_norm[0],
-    "R2": R_norm[1],
-})
-print(SEIR_metapopulation_data)
 
-data_folder = "."  # current directory
-csv_path = os.path.join(data_folder, "SEIR_metapopulation_two_patch.csv")
+### Export to CSV
+data = {"time": t_norm}
+
+for i in range(P):
+    data[f"S{i+1}"] = S_norm[i]
+    data[f"E{i+1}"] = E_norm[i]
+    data[f"I{i+1}"] = I_norm[i]
+    data[f"R{i+1}"] = R_norm[i]
+
+SEIR_metapopulation_data = pd.DataFrame(data)
+
+print(SEIR_metapopulation_data.head())
+
+data_folder = "."
+csv_path = os.path.join(data_folder, "SEIR_metapopulation_5_patch.csv")
 SEIR_metapopulation_data.to_csv(csv_path, index=False)
- 
+
+print("Saved to:", csv_path)

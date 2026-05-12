@@ -31,7 +31,7 @@ scenarios = [
 for noise_percent in range(1, 21):
     scenarios.append({
         "label": f"Gaussian_noise_{noise_percent}percent",
-        "csv":   f"SEIR_Gaussian_noise_{noise_percent}percent.csv",
+        "csv": f"SEIR_Gaussian_noise_{noise_percent}percent.csv",
         "beta_true": 0.75,
         "smooth_beta": True,
     })
@@ -44,10 +44,10 @@ def compute_metrics(pred, true, name, label, compartment):
     mae  = np.mean(np.abs(pred - true))
     rmse = np.sqrt(np.mean((pred - true) ** 2))
  
-    mean_true    = np.mean(true)
-    peak_true    = np.max(true)
-    mae_pct      = 100 * mae  / (mean_true + 1e-8)
-    rmse_pct     = 100 * rmse / (mean_true + 1e-8)
+    mean_true = np.mean(true)
+    peak_true = np.max(true)
+    mae_pct = 100 * mae  / (mean_true + 1e-8)
+    rmse_pct = 100 * rmse / (mean_true + 1e-8)
     peak_mae_pct = 100 * mae  / (peak_true + 1e-8)
  
     print(f"{name}:")
@@ -56,18 +56,18 @@ def compute_metrics(pred, true, name, label, compartment):
     print(f"  Peak-normalised MAE = {peak_mae_pct:.3f}%\n")
  
     return {
-        "scenario":     label,
-        "compartment":  compartment,
-        "MAE":          mae,
-        "RMSE":         rmse,
-        "MAE_pct":      mae_pct,
-        "RMSE_pct":     rmse_pct,
+        "scenario": label,
+        "compartment": compartment,
+        "MAE": mae,
+        "RMSE": rmse,
+        "MAE_pct": mae_pct,
+        "RMSE_pct": rmse_pct,
         "peak_MAE_pct": peak_mae_pct,
     }
  
 ### Scenario loop
 for scenario in scenarios:
-    label     = scenario["label"]
+    label = scenario["label"]
     csv_file  = scenario["csv"]
     beta_true = scenario["beta_true"]   # None for time-varying scenarios
     smooth_beta = scenario["smooth_beta"]
@@ -83,15 +83,15 @@ for scenario in scenarios:
     I_data = data["I"].values.reshape(-1, 1)
  
     ### Train/test split
-    N_obs  = len(I_data)
+    N_obs = len(I_data)
     t_data = t_data[:N_obs].reshape(-1, 1)
     I_data = I_data.reshape(-1, 1)
  
-    split   = int(0.8 * N_obs)
+    split = int(0.9 * N_obs)
     t_train = t_data[:split]
     I_train = I_data[:split]
-    t_test  = t_data[split:]
-    I_test  = I_data[split:]
+    t_test = t_data[split:]
+    I_test = I_data[split:]
  
     I_scale = tf.constant(float(I_train.max()), dtype=tf.float32)
  
@@ -108,45 +108,37 @@ for scenario in scenarios:
     ### https://developers.google.com/machine-learning/crash-course/overfitting/regularization
     def create_pinn_model():
         t_input = Input(shape=(1,), name='time_input')
- 
-        ### SEIR subnet — 3 hidden layers, 50 neurons, tanh (Qian et al. 2025)
-        seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
-        seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(seir)
-        seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(seir)
- 
-        ### SEIR outputs 
-        ### 4 output layers
-        ### No activation function
-        S = Dense(1, activation="softplus", name='S')(seir)
-        E = Dense(1, activation="softplus", name='E')(seir)
-        I = Dense(1, activation="softplus", name='I')(seir)
-        R = Dense(1, activation="softplus", name='R')(seir)
- 
-        ### Time-varying beta 
-        ### beta = softplus activation -> allows it to be greater than 1
-        ### 3 hidden layers, 50 neurons, tanh activation
-        beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
-        beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
-        beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
+    
+        ### SEIR —> 3 hidden layers, 50 neurons, tanh activation
+        seir = Dense(50, activation='tanh')(t_input)
+        seir = Dense(50, activation='tanh')(seir)
+        seir = Dense(50, activation='tanh')(seir)
+    
+        ### SEIR compartment outputs (softplus keeps values non-negative)
+        S = Dense(1, activation='softplus', name='S')(seir)
+        E = Dense(1, activation='softplus', name='E')(seir)
+        I = Dense(1, activation='softplus', name='I')(seir)
+        R = Dense(1, activation='softplus', name='R')(seir)
+    
+        ### Separate beta sub-network —> 3 hidden layers, 50 neurons, tanh
+        beta_h = Dense(50, activation='tanh')(t_input)
+        beta_h = Dense(50, activation='tanh')(beta_h)
+        beta_h = Dense(50, activation='tanh')(beta_h)
         
-        ### Beta outputs
-        ### One output layer
-        ### No activation function on log_beta, then exponentiate to ensure positivity
-        log_beta    = Dense(1, activation=None, name='log_beta')(beta_hidden)
-        beta        = Lambda(lambda x: tf.exp(x), name='beta')(log_beta)
- 
+        beta   = Dense(1, activation=None, name='beta')(beta_h)
+    
         return Model(inputs=t_input, outputs=[S, E, I, R, beta])
  
-    ### Fresh model for each beta scenario
+    ### Fresh model for each scenario
     tf.keras.backend.clear_session()
     model = create_pinn_model()
     model.summary()
  
     ### Define intitial conditions
     S0_fixed = tf.constant(100000/100001, dtype=tf.float32)
-    E0_fixed = tf.constant(0.0,           dtype=tf.float32)
-    I0_fixed = tf.constant(1/100001,      dtype=tf.float32)
-    R0_fixed = tf.constant(0.0,           dtype=tf.float32)
+    E0_fixed = tf.constant(0.0, dtype=tf.float32)
+    I0_fixed = tf.constant(1/100001, dtype=tf.float32)
+    R0_fixed = tf.constant(0.0, dtype=tf.float32)
  
     ### Loss function
     def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale, smooth_beta=True):
@@ -181,7 +173,7 @@ for scenario in scenarios:
         dI_dt = tape.gradient(I, t_col)
         dR_dt = tape.gradient(R, t_col)
  
-        d_beta_dt        = tape.gradient(beta, t_col)
+        d_beta_dt = tape.gradient(beta, t_col)
         beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt)) if smooth_beta else 0.0
  
         del tape
@@ -229,10 +221,10 @@ for scenario in scenarios:
         )
  
         return total_loss, {
-            "data_loss":         data_loss,
-            "IC_loss":           Initial_condition_loss,
+            "data_loss": data_loss,
+            "IC_loss": Initial_condition_loss,
             "conservation_loss": conservation_loss,
-            "ODE_loss":          ODE_loss,
+            "ODE_loss": ODE_loss,
         }
  
     ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
@@ -240,16 +232,16 @@ for scenario in scenarios:
     optm = Adam(learning_rate=0.001)
  
     ### Collocation points for physics
-    n_collocation  = 1000
-    t_col_tensor   = tf.convert_to_tensor(
+    n_collocation = 1000
+    t_col_tensor = tf.convert_to_tensor(
         np.linspace(0, 1, n_collocation).reshape(-1, 1), dtype=tf.float32
     )
  
     ### ensure all inputs are float32 for training
     t_train = tf.convert_to_tensor(t_train, dtype=tf.float32)
     I_train = tf.convert_to_tensor(I_train, dtype=tf.float32)
-    t_test  = tf.convert_to_tensor(t_test,  dtype=tf.float32)
-    I_test  = tf.convert_to_tensor(I_test,  dtype=tf.float32)
+    t_test = tf.convert_to_tensor(t_test,  dtype=tf.float32)
+    I_test = tf.convert_to_tensor(I_test,  dtype=tf.float32)
  
     ### Training loop
     @tf.function
@@ -292,29 +284,29 @@ for scenario in scenarios:
     def to_numpy_flat(arr):
         return arr.numpy().flatten() if hasattr(arr, 'numpy') else arr.flatten()
  
-    t_data_np  = to_numpy_flat(t_data)
-    I_pred_np  = to_numpy_flat(I_pred)
+    t_data_np = to_numpy_flat(t_data)
+    I_pred_np = to_numpy_flat(I_pred)
     t_train_np = to_numpy_flat(t_train)
     I_train_np = to_numpy_flat(I_train)
-    t_test_np  = to_numpy_flat(t_test)
-    I_test_np  = to_numpy_flat(I_test)
+    t_test_np = to_numpy_flat(t_test)
+    I_test_np = to_numpy_flat(I_test)
  
     ### Un-normalise time and counts for plotting and metrics
     days_total = 100
-    N_total    = 100001
+    N_total = 100001
  
-    t_data_unnorm  = t_data_np  * days_total
+    t_data_unnorm = t_data_np * days_total
     t_train_unnorm = t_train_np * days_total
-    t_test_unnorm  = t_test_np  * days_total
+    t_test_unnorm = t_test_np * days_total
  
-    I_pred_unnorm  = I_pred_np  * N_total
+    I_pred_unnorm = I_pred_np * N_total
     I_train_unnorm = I_train_np * N_total
-    I_test_unnorm  = I_test_np  * N_total
+    I_test_unnorm = I_test_np * N_total
  
-    S_rec         = 1.0 - to_numpy_flat(E_pred) - to_numpy_flat(I_pred) - to_numpy_flat(R_pred)
-    S_rec_unnorm  = S_rec                       * N_total
-    E_pred_unnorm = to_numpy_flat(E_pred)       * N_total
-    R_pred_unnorm = to_numpy_flat(R_pred)       * N_total
+    S_rec = 1.0 - to_numpy_flat(E_pred) - to_numpy_flat(I_pred) - to_numpy_flat(R_pred)
+    S_rec_unnorm  = S_rec * N_total
+    E_pred_unnorm = to_numpy_flat(E_pred) * N_total
+    R_pred_unnorm = to_numpy_flat(R_pred) * N_total
  
     ### Training loss
     plt.figure(figsize=(10, 8))
@@ -322,12 +314,12 @@ for scenario in scenarios:
     plt.plot(test_loss_record,  label='Test loss')
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
-    plt.title(f'Training Loss ({label}) 80/20 split')
+    plt.title(f'Training Loss ({label}) 90/10 split')
     plt.yscale('log')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_80_20.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_90_10.png'))
     plt.close()
  
     ### PINN prediction vs observed
@@ -338,15 +330,15 @@ for scenario in scenarios:
     plt.axvline(x=t_train_unnorm[-1], color='gray', linestyle='--', label='Train/Test Split')
     plt.xlabel('Days')
     plt.ylabel('Number of infected individuals')
-    plt.title(f'PINN prediction {label} - 80/20 split')
+    plt.title(f'PINN prediction {label} - 90/10 split')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_beta_{label}_80_20.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_beta_{label}_90_10.png'))
     plt.close()
  
     ### Estimated beta
-    t_plot        = np.linspace(0.0, 1.0, 500).reshape(-1, 1)
+    t_plot = np.linspace(0.0, 1.0, 500).reshape(-1, 1)
     t_plot_tensor = tf.convert_to_tensor(t_plot, dtype=tf.float32)
     _, _, _, _, beta_pred = model.predict(t_plot_tensor)
     t_plot_unnorm = t_plot.flatten() * days_total
@@ -359,11 +351,11 @@ for scenario in scenarios:
     plt.xlabel('Days')
     plt.ylabel('β(t)')
     plt.ylim(0, 1)
-    plt.title(f'Estimated β(t) vs true β ({label}) 80/20 split')
+    plt.title(f'Estimated β(t) vs true β ({label}) 90/10 split')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{label}_80_20.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{label}_90_10.png'))
     plt.close()
  
     ### Susceptible
@@ -403,7 +395,7 @@ for scenario in scenarios:
     plt.close()
  
     ### Error metrics
-    print("\n── Compartment Error Metrics ─────────────────────")
+    print("Error metrics:")
 
     I_true_unnorm = data["I"].values.flatten() * N_total
  
@@ -423,7 +415,7 @@ for scenario in scenarios:
  
 ### Save evaluation metrics to CSV
 metrics_df = pd.DataFrame(all_metrics)
-metrics_df.to_csv(os.path.join(output_dir, "PINN_error_metrics_80_20.csv"), index=False)
-print("\nMetrics saved to PINN_error_metrics_80_20.csv")
+metrics_df.to_csv(os.path.join(output_dir, "PINN_error_metrics_90_10.csv"), index=False)
+print("\nMetrics saved to PINN_error_metrics_90_10.csv")
 print(metrics_df.to_string(index=False))
  
