@@ -279,9 +279,9 @@ for scenario in scenarios:
                 f"Conservation: {float(train_loss_dict['conservation_loss']):.6f}, "
                 f"ODE: {float(train_loss_dict['ODE_loss']):.6f}"
             )
-### Predictions
+    ### Predictions
     t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
-    _, _, I_pred, _, _, _, _ = model(t_tensor)
+    S_pred, E_pred, I_pred, R_pred, beta_pred_full, gamma_pred_full, sigma_pred_full = model(t_tensor)
 
     def to_numpy_flat(arr):
         if hasattr(arr, 'numpy'):
@@ -299,20 +299,20 @@ for scenario in scenarios:
 
     ### Un-normalise time and counts for plotting and metrics
     days_total = 100
-    N_total    = 100001
+    N_total = 100001
  
-    t_data_unnorm  = t_data_np  * days_total
+    t_data_unnorm = t_data_np * days_total
     t_train_unnorm = t_train_np * days_total
-    t_test_unnorm  = t_test_np  * days_total
+    t_test_unnorm = t_test_np * days_total
  
-    I_pred_unnorm  = I_pred_np  * N_total
+    I_pred_unnorm = I_pred_np * N_total
     I_train_unnorm = I_train_np * N_total
-    I_test_unnorm  = I_test_np  * N_total
+    I_test_unnorm = I_test_np * N_total
  
-    S_rec         = 1.0 - to_numpy_flat(E_pred) - to_numpy_flat(I_pred) - to_numpy_flat(R_pred)
-    S_rec_unnorm  = S_rec                       * N_total
-    E_pred_unnorm = to_numpy_flat(E_pred)       * N_total
-    R_pred_unnorm = to_numpy_flat(R_pred)       * N_total
+    S_rec = 1.0 - to_numpy_flat(E_pred) - to_numpy_flat(I_pred) - to_numpy_flat(R_pred)
+    S_rec_unnorm = S_rec * N_total
+    E_pred_unnorm = to_numpy_flat(E_pred) * N_total
+    R_pred_unnorm = to_numpy_flat(R_pred) * N_total
     
     ### Plot training loss
     plt.figure(figsize=(10, 8))
@@ -326,9 +326,9 @@ for scenario in scenarios:
 
     ### PINN prediction vs observed
     plt.figure(figsize=(14, 6))
-    plt.plot(t_data_unnorm,  I_pred_unnorm,  color="#ff7ee3", linewidth=2, label='Infected - PINN prediction')
+    plt.plot(t_data_unnorm,  I_pred_unnorm, color="#ff7ee3", linewidth=2, label='Infected - PINN prediction')
     plt.plot(t_train_unnorm, I_train_unnorm, color="#004F94", linewidth=2, label='Infected - data')
-    plt.plot(t_test_unnorm,  I_test_unnorm,  color="#004F94", linewidth=2)
+    plt.plot(t_test_unnorm,  I_test_unnorm, color="#004F94", linewidth=2)
     plt.axvline(x=t_train_unnorm[-1], color='gray', linestyle='--', label='Train/Test Split')
     plt.xlabel('Days')
     plt.ylabel('Number of infected individuals')
@@ -340,9 +340,11 @@ for scenario in scenarios:
     plt.close()
  
     ### Estimated beta
-    t_plot        = np.linspace(0.0, 1.0, 500).reshape(-1, 1)
+    t_plot = np.linspace(0.0, 1.0, 500).reshape(-1, 1)
     t_plot_tensor = tf.convert_to_tensor(t_plot, dtype=tf.float32)
-    _, _, _, _, beta_pred = model.predict(t_plot_tensor)
+    t_plot_tensor = tf.convert_to_tensor(t_plot, dtype=tf.float32)
+    _, _, _, _, beta_pred, _, _ = model(t_plot_tensor)
+    beta_pred = beta_pred.numpy()
     t_plot_unnorm = t_plot.flatten() * days_total
  
     plt.figure(figsize=(8, 5))
@@ -357,7 +359,7 @@ for scenario in scenarios:
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_beta_{label}_90_10.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_param_est_beta_{label}_90_10.png'))
     plt.close()
  
     ### Susceptible
@@ -396,28 +398,4 @@ for scenario in scenarios:
     plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_R_comparison_{label}.png'))
     plt.close()
  
-    ### Error metrics
-    print("\n── Compartment Error Metrics ─────────────────────")
-
-    I_true_unnorm = data["I"].values.flatten() * N_total
- 
-    if "S" in data.columns:
-        S_true_unnorm = data["S"].values.flatten() * N_total
-        all_metrics.append(compute_metrics(S_rec_unnorm,  S_true_unnorm, "Susceptible", label, "S"))
- 
-    if "E" in data.columns:
-        E_true_unnorm = data["E"].values.flatten() * N_total
-        all_metrics.append(compute_metrics(E_pred_unnorm, E_true_unnorm, "Exposed",     label, "E"))
- 
-    all_metrics.append(compute_metrics(I_pred_unnorm, I_true_unnorm, "Infected", label, "I"))
- 
-    if "R" in data.columns:
-        R_true_unnorm = data["R"].values.flatten() * N_total
-        all_metrics.append(compute_metrics(R_pred_unnorm, R_true_unnorm, "Recovered",   label, "R"))
- 
-### Save evaluation metrics to CSV
-metrics_df = pd.DataFrame(all_metrics)
-metrics_df.to_csv(os.path.join(output_dir, "PINN_all_learnable_parameters_error_metrics_90_10.csv"), index=False)
-print("\nMetrics saved to PINN_all_learnable_parameters_error_metrics_90_10.csv")
-print(metrics_df.to_string(index=False))
- 
+    

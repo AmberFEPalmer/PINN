@@ -9,7 +9,7 @@ import os
 ### Initial conditions
 E0, I0, R0, S0 = 0, 1, 0, 100000
 N = 100001
-days = 100
+days = 140
 
 ### Parameters
 beta_values = [0.75, 0.5, 0.4]
@@ -74,7 +74,7 @@ for beta in beta_values:
     plt.xlabel("Days")
     plt.ylabel("Number of people in each compartment")
     plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'SEIR_constant_beta_{beta}.png'))
+    plt.savefig(os.path.join(output_dir, f'SEIR_140_days_constant_beta_{beta}.png'))
     plt.show()
 
     ### Normalise time for PINN
@@ -89,7 +89,7 @@ for beta in beta_values:
     "R": R_norm
     })
     print(SEIR_data)
-    csv_path = os.path.join(data_folder, f"SEIR_data_beta_{beta}.csv")
+    csv_path = os.path.join(data_folder, f"SEIR_140_days_constant_beta_{beta}.csv")
     SEIR_data.to_csv(csv_path, index=False)
     
     

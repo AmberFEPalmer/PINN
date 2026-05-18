@@ -22,8 +22,8 @@ scenarios = [
     {"label": "beta_0.5",  "csv": "SEIR_data_beta_0.5.csv",  "beta_true": 0.5,  "smooth_beta": True},
     {"label": "beta_0.4",  "csv": "SEIR_data_beta_0.4.csv",  "beta_true": 0.4,  "smooth_beta": True},
     ### Time-varying beta scenarios
-    {"label": "beta_piecewise", "csv": "SEIR_beta_peicewise.csv",                 "beta_true": None, "smooth_beta": False},
-    {"label": "beta_spline",    "csv": "SEIR_beta_spline.csv",                    "beta_true": None, "smooth_beta": False},
+    {"label": "beta_piecewise", "csv": "SEIR_beta_peicewise.csv", "beta_true": None, "smooth_beta": False},
+    {"label": "beta_spline",    "csv": "SEIR_beta_spline.csv", "beta_true": None, "smooth_beta": False},
     {"label": "beta_exp_decay", "csv": "SEIR_beta_exponential_decay_results.csv", "beta_true": None, "smooth_beta": False},
 ]
  
@@ -51,9 +51,9 @@ def compute_metrics(pred, true, name, label, compartment):
     peak_mae_pct = 100 * mae  / (peak_true + 1e-8)
  
     print(f"{name}:")
-    print(f"  MAE   = {mae:.4f} ({mae_pct:.3f}%)")
-    print(f"  RMSE  = {rmse:.4f} ({rmse_pct:.3f}%)")
-    print(f"  Peak-normalised MAE = {peak_mae_pct:.3f}%\n")
+    print(f"MAE = {mae:.4f} ({mae_pct:.3f}%)")
+    print(f"RMSE = {rmse:.4f} ({rmse_pct:.3f}%)")
+    print(f"Peak-normalised MAE = {peak_mae_pct:.3f}%\n")
  
     return {
         "scenario": label,

@@ -13,7 +13,7 @@ data_folder = os.path.join("..", "synthetic_data_generation")
 output_dir  = os.path.join("..", "..", "png_files")
 os.makedirs(output_dir, exist_ok=True)
  
-data_path = os.path.join(data_folder, "SEIR_metapopulation_5_patch.csv")
+data_path = os.path.join(data_folder, "SimpleSEIR_metapopulation_3_patch.csv")
 data = pd.read_csv(data_path)
  
 t_data = data["time"].values.reshape(-1, 1)
@@ -26,7 +26,7 @@ t_train = tf.convert_to_tensor(t_data[:split], dtype=tf.float32)
 t_test  = tf.convert_to_tensor(t_data[split:], dtype=tf.float32)
  
 ### SEIR
-P = 5
+P = 3
  
 I_train_list = []
 I_test_list = []
@@ -96,9 +96,13 @@ def loss_function(t_col, t_data_loss, I_data_list, net, I_scale, P, smooth_beta=
     N = tf.constant(50000.0, dtype=tf.float32)
  
     ### Migration matrix
-    M = np.full((P, P), 0.01 / (P - 1))
-    np.fill_diagonal(M, -0.01)
-    M_tensor = tf.constant(M, dtype=tf.float32)
+    m_rate = 0.01
+    M_np   = np.zeros((P, P), dtype=np.float32)
+    M_np[1, 0] =  m_rate   # patch 2 receives from patch 1
+    M_np[0, 0] = -m_rate   # patch 1 loses to patch 2
+    M_np[2, 1] =  m_rate   # patch 3 receives from patch 2
+    M_np[1, 1] = -m_rate   # patch 2 loses to patch 3
+    M_tensor   = tf.constant(M_np, dtype=tf.float32)   # shape [P, P]
  
     S_list, E_list, I_list, R_list, beta_list  = [], [], [], [], []
     dS_dt_list, dE_dt_list, dI_dt_list, dR_dt_list = [], [], [], []
@@ -177,26 +181,28 @@ def loss_function(t_col, t_data_loss, I_data_list, net, I_scale, P, smooth_beta=
         _, _, I_pred, _, _ = net([t_data_loss, patch])
         data_loss += tf.reduce_mean(((I_pred - I_data_list[i]) / I_scale)**2)
  
-    if smooth_beta and P > 1:
-        beta_smooth_loss = tf.reduce_mean(tf.square(beta[:, 1:] - beta[:, :-1]))
+    if smooth_beta and tf.shape(t_col)[0] > 1:
+        beta_smooth_loss = tf.reduce_mean(
+            tf.square(beta[1:, :] - beta[:-1, :])
+        )
     else:
         beta_smooth_loss = tf.constant(0.0, dtype=tf.float32)
  
     ### Total loss
     total_loss = (
-            1.0 * data_loss +
-            0.1 * ODE_loss +
-            1.0 * IC_loss +
-            1.0 * conservation_loss +
-            0.0 * beta_smooth_loss
-        )
+        1.0 * data_loss +
+        0.1 * ODE_loss +
+        1.0 * IC_loss +
+        1.0 * conservation_loss +
+        0.1 * beta_smooth_loss
+    )
  
     return total_loss, {
-        "data_loss": data_loss,
-        "IC_loss": IC_loss,
+        "data_loss":         data_loss,
+        "IC_loss":           IC_loss,
         "conservation_loss": conservation_loss,
-        "ODE_loss": ODE_loss,
-        "beta_smooth_loss": beta_smooth_loss,
+        "ODE_loss":          ODE_loss,
+        "beta_smooth_loss":  beta_smooth_loss,
     }
  
 ### Optimiser and collocation points
@@ -264,7 +270,6 @@ t_test_np  = to_numpy_flat(t_test)
  
 def predict_patch(net, t_col, patch_idx):
     n = tf.shape(t_col)[0]
-    # FIX 4: int32 patch for prediction too
     patch_tensor = tf.fill([n, 1], patch_idx)
     patch_tensor = tf.cast(patch_tensor, tf.int32)
     S, E, I, R, beta = net([t_col, patch_tensor])
@@ -298,43 +303,27 @@ plt.savefig(os.path.join(output_dir, 'PINN_training_loss.png'))
 plt.show()
  
 ### Distinct colours for each patch
-patch_colors = ["#e63946", "#f4a261", "#2a9d8f", "#457b9d", "#9b5de5"]
+patch_colors = ["#e63946", "#f4a261", "#2a9d8f"]  
  
-### Plot PINN predictions vs observed — all P patches
 plt.figure(figsize=(14, 6))
 for i in range(P):
     c = patch_colors[i]
     plt.plot(t_data_np,  I_pred_np[i],  color=c, linewidth=2,
-             label=f'Patch {i+1} (PINN)')
-    plt.plot(t_train_np, I_train_np[i], color=c, linewidth=2, linestyle='-',
-             alpha=0.5, label=f'Patch {i+1} (observed – train)')
-    plt.plot(t_test_np,  I_test_np[i],  color=c, linewidth=2, linestyle='--',
-             alpha=0.5, label=f'Patch {i+1} (observed – test)')
+             label=f"Patch {i+1} (PINN)")
+    plt.plot(t_train_np, I_train_np[i], color=c, linewidth=2,
+             linestyle="-",  alpha=0.5,
+             label=f"Patch {i+1} (observed – train)")
+    plt.plot(t_test_np,  I_test_np[i],  color=c, linewidth=2,
+             linestyle="--", alpha=0.5,
+             label=f"Patch {i+1} (observed – test)")
  
-plt.axvline(x=t_train_np[-1], color='gray', linestyle='--', label='Train/Test Split')
-plt.xlabel('Time')
-plt.ylabel('Infected (normalised)')
-plt.title('PINN metapopulation — 5 patch')
+plt.axvline(x=t_train_np[-1], color="gray", linestyle="--",
+            label="Train / Test split")
+plt.xlabel("Normalised time")
+plt.ylabel("Infected (normalised)")
+plt.title(f"PINN simple metapopulation — {P} patch")
 plt.legend(ncol=2, fontsize=8)
 plt.grid(True)
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir, 'PINN_metapopulation.png'))
-plt.show()
-
-### Plot beta for each patch
-t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
-
-plt.figure(figsize=(14, 6))
-for i in range(P):
-    _, _, _, _, beta_pred = predict_patch(model, t_tensor, patch_idx=i)
-    beta_np = to_numpy_flat(beta_pred)
-    plt.plot(t_data_np, beta_np, color=patch_colors[i], linewidth=2, label=f'Patch {i+1}')
-
-plt.xlabel('Time (normalised)')
-plt.ylabel('β (transmission rate)')
-plt.title('Estimated β over time — 5-patch SEIR PINN')
-plt.legend(ncol=1, fontsize=9)
-plt.grid(True)
-plt.tight_layout()
-plt.savefig(os.path.join(output_dir, 'PINN_beta_per_patch.png'))
+plt.savefig(os.path.join(output_dir, "PINN_simple_metapopulation.png"), dpi=150)
 plt.show()

@@ -16,7 +16,7 @@ sigma, gamma = 0.25, 0.25
 ### Initial beta and new beta after day 30
 beta0 = 0.75
 beta1 = 0.55
-change_day = 30
+change_day = 92
 beta_t = np.where(t < change_day, beta0, beta1)
 
 def beta_func(t):
