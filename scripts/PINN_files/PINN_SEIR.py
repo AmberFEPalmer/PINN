@@ -9,12 +9,15 @@ from tensorflow.keras import regularizers
 import pandas as pd
 import os
  
+np.random.seed(42)
+tf.random.set_seed(42)
+
 ### Load data from data_processing.py
 ### t_data_study.npy is already normalised to [0, 1] by data_processing.py
 ### Load the raw (un-normalised) time in days separately so we have the true
 ### physical time scale needed to correctly weight the ODE residuals.
 t_data_norm = np.load("../../data/t_data_study.npy").reshape(-1, 1)   # [0, 1]
-I_data       = np.load("../../data/I_data_study.npy").reshape(-1, 1)
+I_data = np.load("../../data/I_data_study.npy").reshape(-1, 1)
  
 ### Cap to 93 weeks to match study period (July 2020 – April 2022)
 t_data_norm = t_data_norm[:93]
@@ -54,7 +57,7 @@ def create_pinn_model():
     return Model(inputs=t_input, outputs=[S, E, I, R, beta])
  
 ### Define physics-informed loss
-def compute_loss(t_col, t_data_loss, I_data_loss, net, t_max_weeks, I0, E0, S0, R0=0.0):
+def compute_loss(t_col, t_data_loss, I_data_loss, net, TOTAL_WEEKS, I0, E0, S0, R0=0.0):
  
     ### Ensure column vectors
     if len(t_col.shape) == 1:
@@ -75,10 +78,10 @@ def compute_loss(t_col, t_data_loss, I_data_loss, net, t_max_weeks, I0, E0, S0, 
     gamma = tf.constant(0.25 * 7, dtype=tf.float32)  # = 1.75 per week
  
     ### Compute derivatives 
-    ### d/dt_physical = (1 / t_max_weeks) * d/dt_norm
-    ### So: d/dt_norm = t_max_weeks * d/dt_physical
+    ### d/dt_physical = (1 / TOTAL_WEEKS) * d/dt_norm
+    ### So: d/dt_norm = TOTAL_WEEKS * d/dt_physical
     ### The ODE is written in physical time 
-    T = tf.cast(t_max_weeks, tf.float32)
+    T = tf.cast(TOTAL_WEEKS, tf.float32)
  
     dS_dt = tape.gradient(S, t_col)
     dE_dt = tape.gradient(E, t_col)
@@ -117,7 +120,7 @@ def compute_loss(t_col, t_data_loss, I_data_loss, net, t_max_weeks, I0, E0, S0, 
     
     ### Total loss 
     total = (1.0  * data_loss +
-             0.1  * ode_loss +
+             0.01  * ode_loss +
              1.0  * ic_loss +
              1.0  * conservation_loss)
  
@@ -130,7 +133,7 @@ def compute_loss(t_col, t_data_loss, I_data_loss, net, t_max_weeks, I0, E0, S0, 
     }
  
 ### Single window training
-def train_window(t_train_norm, I_train, t_max_weeks, n_iter=50_000,
+def train_window(t_train_norm, I_train, TOTAL_WEEKS, n_iter=50_000,
                  warm_start_model=None):
     model = create_pinn_model()
  
@@ -163,7 +166,7 @@ def train_window(t_train_norm, I_train, t_max_weeks, n_iter=50_000,
     def step():
         with tf.GradientTape() as tape:
             loss, loss_dict = compute_loss(t_col_tensor, t_tr, I_tr, model,
-                                           t_max_weeks, I0, E0, S0, R0)
+                                           TOTAL_WEEKS, I0, E0, S0, R0)
         grads = tape.gradient(loss, model.trainable_variables)
         optm.apply_gradients(zip(grads, model.trainable_variables))
         return loss, loss_dict
@@ -201,23 +204,21 @@ for train_end in range(First_train_weeks, N_total_points - Forecast_horizon + 1)
  
     ### Re-normalise so the window spans [0, 1].
     ### The network sees a consistent [0,1] input each window.
-    t_win_min = float(t_tr_norm_global[0])
-    t_win_max = float(t_tr_norm_global[-1])
-    t_tr_norm = (t_tr_norm_global - t_win_min) / (t_win_max - t_win_min)
+    t_tr_norm = t_tr_norm = t_tr_norm_global
  
-    ### Physical duration of the training window in weeks
-    t_max_weeks = float(t_data_weeks[train_end - 1]) 
+    ### Physical duration of the training in weeks
+    TOTAL_WEEKS = float(N_total_points - 1)
  
     ### Model iterations
     n_iter = 50_000 
  
     print(f"Training on weeks 1–{train_end} "
           f"| forecasting weeks {train_end+1}–{train_end+Forecast_horizon} "
-          f"| T = {t_max_weeks:.1f} weeks | iters = {n_iter}"
+          f"| T = {TOTAL_WEEKS:.1f} weeks | iters = {n_iter}"
           f"{'  [warm start]' if model is not None else '  [cold start]'}")
  
     ### Train the PINN — pass previous model for warm-starting
-    model = train_window(t_tr_norm, I_tr_np, t_max_weeks=t_max_weeks,
+    model = train_window(t_tr_norm, I_tr_np, TOTAL_WEEKS=TOTAL_WEEKS,
                          n_iter=n_iter, warm_start_model=model)
  
     ### Generate 1–4 week ahead forecasts
@@ -228,7 +229,7 @@ for train_end in range(First_train_weeks, N_total_points - Forecast_horizon + 1)
  
         ### Normalise the forecast time into the same window-local [0, 1] scale.
         t_fc_global = float(t_data_norm[forecast_idx])
-        t_fc_norm = (t_fc_global - t_win_min) / (t_win_max - t_win_min)
+        t_fc_norm = t_fc_global
         ### Note: t_fc_norm > 1 for all forecast points — this is expected and
         ### correct; the network extrapolates beyond its training horizon.
  
@@ -324,32 +325,35 @@ plt.savefig("rolling_window_Rt.png", dpi=150)
 plt.show()
  
 ### Model evaluation
-print("\nForecast evaluation (MAE, RMSE, MASE):")
+print("\nForecast evaluation (MAE, RMSE):")
+
 rows = []
+
 for h in range(1, 5):
-    pred  = np.array(horizon_results[h]["pred"])
-    obs   = np.array(horizon_results[h]["obs"])
-    naive = np.array(horizon_results[h]["naive"])
 
-    mae_pinn  = np.mean(np.abs(pred  - obs))
-    rmse_pinn = np.sqrt(np.mean((pred  - obs) ** 2))
-    mae_naive = np.mean(np.abs(naive - obs))
+    pred = np.array(horizon_results[h]["pred"])
+    obs  = np.array(horizon_results[h]["obs"])
 
-    ### MASE = MAE of model / MAE of naive baseline
-    ### < 1 means PINN beats naive, > 1 means naive is better
-    mase = mae_pinn / (mae_naive + 1e-10)
+    ### PINN metrics
+    mae_pinn  = np.mean(np.abs(pred - obs))
+    rmse_pinn = np.sqrt(np.mean((pred - obs) ** 2))
 
-    print(f"  {h}-week | PINN MAE={mae_pinn:.6f}  RMSE={rmse_pinn:.6f} | "
-          f"Naive MAE={mae_naive:.6f} | MASE={mase:.4f} "
-          f"{'[PINN wins]' if mase < 1 else '[Naive wins]'}")
+    print(
+        f"{h}-week | "
+        f"PINN MAE={mae_pinn:.6f} | "
+        f"PINN RMSE={rmse_pinn:.6f}"
+    )
 
     rows.append({
-        "horizon":    h,
-        "PINN_MAE":   mae_pinn,
-        "PINN_RMSE":  rmse_pinn,
-        "Naive_MAE":  mae_naive,
-        "MASE":       mase,
+        "horizon": h,
+        "PINN_MAE": mae_pinn,
+        "PINN_RMSE": rmse_pinn,
     })
 
-pd.DataFrame(rows).to_csv("forecast_metrics.csv", index=False)
+### Save metrics
+metrics_df = pd.DataFrame(rows)
+
+metrics_df.to_csv("forecast_metrics.csv", index=False)
+
 print("\nMetrics saved to forecast_metrics.csv")
+print(metrics_df)
