@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import random
 from tensorflow.keras.layers import Dense, Input, Lambda
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
@@ -11,10 +12,8 @@ import os
 data_folder = os.path.join("..", "..", "data")
 output_dir = "../../png_files"
 
-### Population size
-N_val = 100001                                          
-N     = tf.constant(float(N_val), dtype=tf.float32)    
-N_sq  = N * N  # ~1e10 – loss normalisation
+### Accumulate metrics across all scenarios
+all_metrics = []
 
 ### Define scenarios to run
 scenarios = [
@@ -23,25 +22,58 @@ scenarios = [
     {"label": "beta_0.5",  "csv": "SEIR_data_beta_0.5.csv",  "beta_true": 0.5,  "smooth_beta": False},
     {"label": "beta_0.4",  "csv": "SEIR_data_beta_0.4.csv",  "beta_true": 0.4,  "smooth_beta": False},
     ### Time-varying beta scenarios
-    {"label": "beta_piecewise", "csv": "SEIR_beta_peicewise.csv", "beta_true": None, "smooth_beta": False},
-    {"label": "beta_spline", "csv": "SEIR_beta_spline.csv", "beta_true": None, "smooth_beta": False},
-    {"label": "beta_exp_decay", "csv": "SEIR_beta_exponential_decay_results.csv", "beta_true": None, "smooth_beta": False},
+    {"label": "beta_piecewise", "csv": "SEIR_beta_peicewise.csv",                        "beta_true": None, "smooth_beta": False},
+    {"label": "beta_spline",    "csv": "SEIR_beta_spline.csv",                            "beta_true": None, "smooth_beta": False},
+    {"label": "beta_exp_decay", "csv": "SEIR_beta_exponential_decay_results.csv",         "beta_true": None, "smooth_beta": False},
 ]
 
-### Gaussian noise scenarios (1% – 20%), beta_true = 0.75
+### Gaussian noise scenarios (1% - 20%), beta_true = 0.75
 for noise_percent in range(1, 21):
     scenarios.append({
         "label": f"Gaussian_noise_{noise_percent}percent",
         "csv": f"SEIR_Gaussian_noise_{noise_percent}percent.csv",
         "beta_true": 0.75,
-        "smooth_beta": True,
+        "smooth_beta": False,
     })
+
+### Compute and report error metrics
+def compute_metrics(pred, true, name, label, compartment):
+    pred = np.array(pred).flatten()
+    true = np.array(true).flatten()
+
+    mae  = np.mean(np.abs(pred - true))
+    rmse = np.sqrt(np.mean((pred - true) ** 2))
+
+    mean_true = np.mean(true)
+    peak_true = np.max(true)
+    mae_pct      = 100 * mae  / (mean_true + 1e-8)
+    rmse_pct     = 100 * rmse / (mean_true + 1e-8)
+    peak_mae_pct = 100 * mae  / (peak_true + 1e-8)
+
+    print(f"{name}:")
+    print(f"MAE = {mae:.4f} ({mae_pct:.3f}%)")
+    print(f"RMSE = {rmse:.4f} ({rmse_pct:.3f}%)")
+    print(f"Peak-normalised MAE = {peak_mae_pct:.3f}%\n")
+
+    return {
+        "scenario":      label,
+        "compartment":   compartment,
+        "MAE":           mae,
+        "RMSE":          rmse,
+        "MAE_pct":       mae_pct,
+        "RMSE_pct":      rmse_pct,
+        "peak_MAE_pct":  peak_mae_pct,
+    }
+
+### ── Population constant (single source of truth) ──────────────────────────
+N_val = 100001          # Python int  – used for numpy / plotting
+N     = tf.constant(float(N_val), dtype=tf.float32)   # TF constant – used inside the model
 
 ### Scenario loop
 for scenario in scenarios:
-    label = scenario["label"]
-    csv_file = scenario["csv"]
-    beta_true = scenario["beta_true"]
+    label       = scenario["label"]
+    csv_file    = scenario["csv"]
+    beta_true   = scenario["beta_true"]   # None for time-varying scenarios
     smooth_beta = scenario["smooth_beta"]
 
     print(f"\n{'='*50}")
@@ -59,9 +91,9 @@ for scenario in scenarios:
     t_data = t_data[:N_obs].reshape(-1, 1)
     I_data = I_data.reshape(-1, 1)
 
-    split = int(0.9 * N_obs)
-    t_train = t_data[:split]; I_train = I_data[:split]
-    t_test  = t_data[split:]; I_test  = I_data[split:]
+    split   = int(0.9 * N_obs)
+    t_train = t_data[:split];  I_train = I_data[:split]
+    t_test  = t_data[split:];  I_test  = I_data[split:]
 
     I_scale = tf.constant(float(I_train.max()), dtype=tf.float32)
 
@@ -77,10 +109,10 @@ for scenario in scenarios:
     def create_pinn_model():
         t_input = Input(shape=(1,), name='time_input')
 
-        ### 3 hidden layers, 50 neurons each, tanh activation
-        seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
-        seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(seir)
-        seir = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(seir)
+        ### SEIR —> 3 hidden layers, 50 neurons, tanh activation
+        seir = Dense(50, activation='tanh')(t_input)
+        seir = Dense(50, activation='tanh')(seir)
+        seir = Dense(50, activation='tanh')(seir)
 
         ### SEIR compartment outputs (softplus keeps values non-negative)
         S = Dense(1, activation='softplus', name='S')(seir)
@@ -88,26 +120,13 @@ for scenario in scenarios:
         I = Dense(1, activation='softplus', name='I')(seir)
         R = Dense(1, activation='softplus', name='R')(seir)
 
-        ### Time-varying beta sub-network
-        beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
-        beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
-        beta_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_hidden)
-        log_beta    = Dense(1, activation=None, name='log_beta')(beta_hidden)
-        beta        = Lambda(lambda x: tf.exp(x), name='beta')(log_beta)
+        ### Separate beta sub-network —> 3 hidden layers, 50 neurons, tanh
+        beta_h = Dense(50, activation='tanh')(t_input)
+        beta_h = Dense(50, activation='tanh')(beta_h)
+        beta_h = Dense(50, activation='tanh')(beta_h)
+        beta   = Dense(1, activation='softplus', name='beta')(beta_h)
 
-        ### Time-varying gamma sub-network
-        gamma_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
-        gamma_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(gamma_hidden)
-        log_gamma    = Dense(1)(gamma_hidden)
-        gamma        = Lambda(lambda x: tf.exp(x))(log_gamma)
-
-        ### Time-varying sigma sub-network
-        sigma_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
-        sigma_hidden = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(sigma_hidden)
-        log_sigma = Dense(1)(sigma_hidden)
-        sigma = Lambda(lambda x: tf.exp(x))(log_sigma)
-
-        return Model(inputs=t_input, outputs=[S, E, I, R, beta, gamma, sigma])
+        return Model(inputs=t_input, outputs=[S, E, I, R, beta])
 
     ### Fresh model for each scenario
     tf.keras.backend.clear_session()
@@ -115,9 +134,9 @@ for scenario in scenarios:
     model.summary()
 
     ### Define initial conditions – derived from N so population is explicit
-    I0 = tf.constant(1.0, dtype=tf.float32)
-    E0 = tf.constant(0.0, dtype=tf.float32)
-    R0 = tf.constant(0.0, dtype=tf.float32)
+    I0 = tf.constant(1.0,  dtype=tf.float32)
+    E0 = tf.constant(0.0,  dtype=tf.float32)
+    R0 = tf.constant(0.0,  dtype=tf.float32)
 
     S0_fixed = (N - I0 - E0 - R0) / N
     E0_fixed = E0 / N
@@ -127,7 +146,7 @@ for scenario in scenarios:
     ### Loss function
     def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale, smooth_beta=True):
 
-        ### If t_col is a 1D array, reshape to a column vector
+        ### if t_col is a 1D array it is reshaped to a column vector
         if len(t_col.shape) == 1:
             t_col = tf.reshape(t_col, (-1, 1))
 
@@ -137,7 +156,7 @@ for scenario in scenarios:
         if not isinstance(I_data_loss, tf.Tensor):
             I_data_loss = tf.convert_to_tensor(I_data_loss, dtype=tf.float32)
 
-        ### Reshape to column vectors
+        ### Reshape arrays to column vectors
         if len(t_data_loss.shape) == 1:
             t_data_loss = tf.reshape(t_data_loss, (-1, 1))
         if len(I_data_loss.shape) == 1:
@@ -148,15 +167,21 @@ for scenario in scenarios:
         ### Calculate the gradients of a computation
         with tf.GradientTape(persistent=True) as tape:
             tape.watch(t_col)
-            S, E, I, R, beta, gamma, sigma = net(t_col)
+            S, E, I, R, beta = net(t_col)
+
+        ### Define parameters which don't vary over time
+        ### Following what was done in Qian et al. 2025
+        sigma = tf.constant(0.25, dtype=tf.float32)
+        gamma = tf.constant(0.25, dtype=tf.float32)
 
         ### Compute derivatives e.g. dS/dt
+        ### Use automatic differentiation
         dS_dt = tape.gradient(S, t_col)
         dE_dt = tape.gradient(E, t_col)
         dI_dt = tape.gradient(I, t_col)
         dR_dt = tape.gradient(R, t_col)
 
-        d_beta_dt = tape.gradient(beta, t_col)
+        d_beta_dt        = tape.gradient(beta, t_col)
         beta_smooth_loss = tf.reduce_mean(tf.square(d_beta_dt)) if smooth_beta else 0.0
 
         del tape
@@ -164,20 +189,20 @@ for scenario in scenarios:
         ### Time scaling factor (100 days normalised to [0,1])
         T = tf.constant(100.0, dtype=tf.float32)
 
-        ### Convert fractional outputs to absolute counts 
+        ### Convert fractional outputs to absolute counts – N is now embedded here
         S_abs = S * N
         E_abs = E * N
         I_abs = I * N
         R_abs = R * N
 
         ### SEIR equations in absolute counts
+        ### Transmission term uses S*I/N – biologically correct force of infection
         dS_dt_physics = T * (-beta * S_abs * I_abs / N)
         dE_dt_physics = T * ( beta * S_abs * I_abs / N - sigma * E_abs)
         dI_dt_physics = T * ( sigma * E_abs - gamma * I_abs)
         dR_dt_physics = T * ( gamma * I_abs)
 
         ### ODE loss in absolute counts (network derivatives scaled by N to match)
-        ### Divided by N_sq to normalise back to O(1) scale
         ODE_loss = (
             tf.reduce_mean(tf.square((dS_dt * N) - dS_dt_physics)) +
             tf.reduce_mean(tf.square((dE_dt * N) - dE_dt_physics)) +
@@ -187,7 +212,7 @@ for scenario in scenarios:
 
         ### Initial condition loss (evaluate at t=0)
         t_zero = tf.constant([[0.0]], dtype=tf.float32)
-        S_0, E_0, I_0, R_0, _, _, _ = net(t_zero)
+        S_0, E_0, I_0, R_0, _ = net(t_zero)
         Initial_condition_loss = tf.reduce_mean(
             tf.square(S_0 - S0_fixed) +
             tf.square(E_0 - E0_fixed) +
@@ -196,35 +221,36 @@ for scenario in scenarios:
         )
 
         ### Conservation loss in absolute counts – S+E+I+R must equal N
-        ### Divided by N_sq to normalise back to O(1) scale
         conservation_loss = tf.reduce_mean(tf.square(S_abs + E_abs + I_abs + R_abs - N))
 
         ### Data loss
-        _, _, I_pred, _, _, _, _ = net(t_data_loss)
+        _, _, I_pred, _, _ = net(t_data_loss)
         data_loss = tf.reduce_mean(tf.square((I_pred - I_data_loss) / I_scale))
 
-        ### Total loss
+        N_sq = N * N   # ~1e10
+
         total_loss = (
             1.0  * data_loss +
             0.1  * (ODE_loss / N_sq) +
             1.0  * Initial_condition_loss +
-            1.0 * (conservation_loss / N_sq) +
+            1.0  * (conservation_loss / N_sq) +
             0  * beta_smooth_loss
-        )
-
-        return total_loss, {
-            "data_loss": data_loss,
-            "IC_loss": Initial_condition_loss,
-            "conservation_loss": conservation_loss / N_sq,
-            "ODE_loss": ODE_loss / N_sq,
-        }
+    )
+        
+        return total_loss, {     
+        "data_loss":         data_loss,
+        "IC_loss":           Initial_condition_loss,
+        "conservation_loss": conservation_loss,
+        "ODE_loss":          ODE_loss,
+    }
 
     ### Kingma DP, Ba J. Adam: A Method for Stochastic Optimization. 2017
+    ### Optimiser and collocation points
     optm = Adam(learning_rate=0.001)
 
-    ### Collocation points for physics loss
-    n_collocation = 1000
-    t_col_tensor  = tf.convert_to_tensor(
+    ### Collocation points for physics
+    n_collocation  = 1000
+    t_col_tensor   = tf.convert_to_tensor(
         np.linspace(0, 1, n_collocation).reshape(-1, 1), dtype=tf.float32
     )
 
@@ -235,24 +261,22 @@ for scenario in scenarios:
     I_test  = tf.convert_to_tensor(I_test,  dtype=tf.float32)
 
     ### Training loop
-    train_loss_record = []
-    test_loss_record  = []
-
     @tf.function
     def train_step(t_col, t_data, I_data):
         with tf.GradientTape() as tape:
-            loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale, smooth_beta)
-        grads = tape.gradient(loss, model.trainable_variables)
+            total_loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale, smooth_beta)
+        grads = tape.gradient(total_loss, model.trainable_variables)
         optm.apply_gradients(zip(grads, model.trainable_variables))
-        return loss, loss_dict
+        return total_loss, loss_dict
 
     @tf.function
     def test_step(t_col, t_data, I_data):
         return loss_function(t_col, t_data, I_data, model, I_scale, smooth_beta)
 
-    print("Starting training...")
+    train_loss_record = []
+    test_loss_record  = []
 
-    ### 50,000 iterations (Qian et al. 2025)
+    print("Starting training...")
     for itr in range(50000):
         train_loss, train_loss_dict = train_step(t_col_tensor, t_train, I_train)
         train_loss_record.append(float(train_loss))
@@ -260,19 +284,21 @@ for scenario in scenarios:
         test_loss, test_loss_dict = test_step(t_col_tensor, t_test, I_test)
         test_loss_record.append(float(test_loss))
 
+        N_sq = N * N
+
         if itr % 1000 == 0:
             print(
                 f"Iteration {itr} | "
                 f"Train: {float(train_loss):.6f}  Test: {float(test_loss):.6f} | "
                 f"Data: {float(train_loss_dict['data_loss']):.6f}  "
                 f"IC: {float(train_loss_dict['IC_loss']):.6f}  "
-                f"Conservation: {float(train_loss_dict['conservation_loss']):.6f}  "
-                f"ODE: {float(train_loss_dict['ODE_loss']):.6f}"
+                f"Conservation: {float(train_loss_dict['conservation_loss'] / N_sq):.6f}  "
+                f"ODE: {float(train_loss_dict['ODE_loss'] / N_sq):.6f}"
             )
-
-    ### Predictions for plotting
+            
+    ### ── Predictions for plotting and metrics ───────────────────────────────
     t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
-    S_pred, E_pred, I_pred, R_pred, beta_pred_full, gamma_pred_full, sigma_pred_full = model(t_tensor)
+    S_pred, E_pred, I_pred, R_pred, _ = model(t_tensor)
 
     def to_numpy_flat(arr):
         return arr.numpy().flatten() if hasattr(arr, 'numpy') else arr.flatten()
@@ -288,14 +314,16 @@ for scenario in scenarios:
     t_train_unnorm = t_train_np * days_total
     t_test_unnorm  = t_test_np  * days_total
 
-    ### Use network outputs directly for all compartments
-    S_pred_unnorm  = to_numpy_flat(S_pred) * N_val
-    E_pred_unnorm  = to_numpy_flat(E_pred) * N_val
-    I_pred_unnorm  = to_numpy_flat(I_pred) * N_val
-    R_pred_unnorm  = to_numpy_flat(R_pred) * N_val
+    ### Use network S output directly (not derived from other compartments)
+    S_pred_unnorm = to_numpy_flat(S_pred) * N_val
+    E_pred_unnorm = to_numpy_flat(E_pred) * N_val
+    I_pred_unnorm = to_numpy_flat(I_pred) * N_val
+    R_pred_unnorm = to_numpy_flat(R_pred) * N_val
 
     I_train_unnorm = to_numpy_flat(I_train) * N_val
     I_test_unnorm  = to_numpy_flat(I_test)  * N_val
+
+    ### ── Plots ──────────────────────────────────────────────────────────────
 
     ### Training loss
     plt.figure(figsize=(10, 8))
@@ -303,12 +331,12 @@ for scenario in scenarios:
     plt.plot(test_loss_record,  label='Test loss')
     plt.xlabel('Iteration')
     plt.ylabel('Loss')
-    plt.title(f'Training Loss ({label}) all learnable parameters 90/10 split')
+    plt.title(f'Training Loss ({label}) 90/10 split')
     plt.yscale('log')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_all_learnable_parameters90_10.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_90_10.png'))
     plt.close()
 
     ### PINN prediction vs observed
@@ -319,18 +347,17 @@ for scenario in scenarios:
     plt.axvline(x=t_train_unnorm[-1], color='gray', linestyle='--', label='Train/Test Split')
     plt.xlabel('Days')
     plt.ylabel('Number of infected individuals')
-    plt.title(f'PINN prediction all learnable parameters - 90/10 split')
+    plt.title(f'PINN prediction {label} - 90/10 split')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_beta_{label}_90_10.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_beta_{label}_90_10.png'))
     plt.close()
 
     ### Estimated beta
-    t_plot = np.linspace(0.0, 1.0, 500).reshape(-1, 1)
+    t_plot        = np.linspace(0.0, 1.0, 500).reshape(-1, 1)
     t_plot_tensor = tf.convert_to_tensor(t_plot, dtype=tf.float32)
-    _, _, _, _, beta_pred, _, _ = model(t_plot_tensor)
-    beta_pred = beta_pred.numpy()
+    _, _, _, _, beta_pred = model.predict(t_plot_tensor)
     t_plot_unnorm = t_plot.flatten() * days_total
 
     plt.figure(figsize=(8, 5))
@@ -345,10 +372,10 @@ for scenario in scenarios:
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_param_est_beta_{label}_90_10.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{label}_90_10.png'))
     plt.close()
 
-    ### Susceptible – uses S_pred_unnorm directly from the network
+    ### Susceptible – now uses S_pred_unnorm directly from the network
     plt.figure(figsize=(14, 6))
     plt.plot(t_data_unnorm, S_pred_unnorm, color="green", linewidth=2, label='Susceptible (PINN)')
     if "S" in data.columns:
@@ -357,7 +384,7 @@ for scenario in scenarios:
     plt.xlabel('Days'); plt.ylabel('Number of individuals')
     plt.title(f'Susceptible population ({label})')
     plt.legend(); plt.grid(True); plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_S_comparison_{label}.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_S_comparison_{label}.png'))
     plt.close()
 
     ### Exposed
@@ -369,7 +396,7 @@ for scenario in scenarios:
     plt.xlabel('Days'); plt.ylabel('Number of individuals')
     plt.title(f'Exposed population ({label})')
     plt.legend(); plt.grid(True); plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_E_comparison_{label}.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_E_comparison_{label}.png'))
     plt.close()
 
     ### Recovered
@@ -381,5 +408,30 @@ for scenario in scenarios:
     plt.xlabel('Days'); plt.ylabel('Number of individuals')
     plt.title(f'Recovered population ({label})')
     plt.legend(); plt.grid(True); plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_all_learnable_parameters_R_comparison_{label}.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_R_comparison_{label}.png'))
     plt.close()
+
+    ### ── Error metrics ───────────────────────────────────────────────────────
+    print("Error metrics:")
+
+    I_true_unnorm = data["I"].values.flatten() * N_val
+
+    if "S" in data.columns:
+        S_true_unnorm = data["S"].values.flatten() * N_val
+        all_metrics.append(compute_metrics(S_pred_unnorm, S_true_unnorm, "Susceptible", label, "S"))
+
+    if "E" in data.columns:
+        E_true_unnorm = data["E"].values.flatten() * N_val
+        all_metrics.append(compute_metrics(E_pred_unnorm, E_true_unnorm, "Exposed",     label, "E"))
+
+    all_metrics.append(compute_metrics(I_pred_unnorm, I_true_unnorm, "Infected", label, "I"))
+
+    if "R" in data.columns:
+        R_true_unnorm = data["R"].values.flatten() * N_val
+        all_metrics.append(compute_metrics(R_pred_unnorm, R_true_unnorm, "Recovered",   label, "R"))
+
+### Save evaluation metrics to CSV
+metrics_df = pd.DataFrame(all_metrics)
+metrics_df.to_csv(os.path.join(output_dir, "PINN_error_metrics_90_10.csv"), index=False)
+print("\nMetrics saved to PINN_error_metrics_90_10.csv")
+print(metrics_df.to_string(index=False))
