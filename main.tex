@@ -1,0 +1,351 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{amsmath}
+\usepackage[normalem]{ulem}
+\usepackage{url} %for url
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{cleveref} %This is great package for adding references
+\usepackage{setspace}
+\usepackage{booktabs}
+\usepackage[margin=1in]{geometry}
+\usepackage[
+    backend=biber,
+    style=authoryear,
+    bibstyle=numeric
+]{biblatex}
+\addbibresource{references.bib}
+\title{Physics informed neural networks to reconstruct transmission rate and forecast future cases of infectious disease}
+\author{Amber Palmer}
+\date{May 2026}
+
+\begin{document}
+
+\maketitle
+
+The aim of this project is to evaluate physics informed neural network's (PINNs) ability to reconstruct the transmission rate and forecast future cases using synthetic data, where the ground truth is known and performance can be validated. The PINN framework is then be used on real-world case data at a regional scale (i.e. England). The longer term aim is to develop a PINN which can forecast cases of disease spatio-temporally. This could be done by embedding a metapopulation model into the PINN, using a graph neural network PINN or by using partial differential equations (PDEs). 
+
+\begin{itemize}
+    \item The PINN can forecast future infections accurately using perfect synthetic data.
+    \item Reconstruction of the transmission rate parameter is more challenging.
+    \item State prediction can mask parameter reconstruction failure i.e. the PINN may produce accurate forecasts of future cases while predicting an incorrect value for the transmission rate.
+    \item The PINN can't recover sharp changes in the transmission rate. This could be due to the smoothness bias of using a MLP \parencite{https://doi.org/10.48550/arxiv.2602.19265, https://doi.org/10.48550/arxiv.1806.08734}
+    \item Only providing the PINN with infection data and population size is insufficient for transmission rate reconstruction due to the transmission rate being structurally unidentifiable. 
+    \item Can co-variates be used for a substitute for latent compartments? e.g. susceptible population, exposed population when we don't have information for that in a real world outbreak scenario. For example, could mobility data, vaccination data, testing positivity help?
+    
+    
+\end{itemize}
+
+\section{Introduction}
+
+Traditionally, infectious disease dynamics have been studied using compartmental models such as the SIR model \parencite{Kermack1927}. The SIR model partitions the population into compartments based on their infection status, resulting in compartments for those that are susceptible (S), infected (I) and recovered (R). Progression through compartments is governed by a system of coupled ordinary differential equations (ODEs). Compartmental models are formulated based on biological principles and known transmission mechanisms of the disease. Extensions to the classical SIR model have also been proposed such as incorporating an exposed compartment \parencite{Piovella2020} and vital dynamics such as births and deaths \parencite{Lopez-de-la-Cruz2025}. However, despite the success of using compartmental models, several limitations should be highlighted. Compartmental models can struggle to account for all the factors influencing disease spread in a population \parencite{Zhao2024}. Additionally, these models struggle with handling time-varying parameters \parencite{Millevoi2024}. Also, a homogenous population is typically assumed, in which individuals mix randomly with each other according to the mass action principle \parencite{Bansal2007}. 
+
+More recently, artificial intelligence (AI)/ machine learning (ML) methods have been increasingly employed to analyse the dynamics of infectious disease. AI/ML algorithms are able to process very large amounts of data and can handle complex non-linear relationships in data. One of the most widely used type of ML is neural networks. Neural networks (multi-layer perceptrons) consist of neurons (mathematical functions) connected by layers. The neural network learns from the data it is provided by adjusting weights and biases to minimise the difference between the network outputs and the data \parencite{https://doi.org/10.48550/arxiv.1404.7828, Goodfellow-et-al-2016, LeCun2015}. The universal approximation theorum states that a neural network of sufficient depth can approximate any function \parencite{Hornik1989}. However, feedforward neural networks have limitations. They require large amounts of data to make their predictions \parencite{Sarker2021, Kraemer2025}, they can fail to differentiate between noise and trends in the data \parencite{Vytla2021}, they can provide unrealistic predictions i.e. inconsistent with biological knowledge \parencite{Willard2022} and have low interpretability, often being referred to as "black box" algorithms \parencite{https://doi.org/10.48550/arxiv.2012.14261}.
+
+Physics informed neural networks (PINNs) incorporate equations e.g. ordinary differential equations (ODEs) and partial differential equations (PDEs) into the loss function of a neural network (\cref{fig:PINN schematic}\parencite{Raissi2019}. This means they combine the predictive power of a neural network with the domain knowledge from mechanistic models, thereby constraining the model to physically (and biologically) plausible results \parencite{Karniadakis2021}. PINNs use neural networks to solve forward problems (solving equations) and inverse problems (identifying parameters) \parencite{Raissi2019}.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=1\linewidth]{Image 22-05-2026 at 08.49.png}
+    \caption{Schematic of a physics informed neural network. The susceptible, exposed, infected, recovered (SEIR) model is embedded into the loss function of a neural network.}
+    \label{fig:PINN schematic}
+\end{figure}
+
+PINNs have previously been applied to forecasting in infectious disease epidemiology. \parencite{Berkhahn2022} developed a PINN for estimating COVID-19 transmission parameters and using these to forecast COVID-19 cases and hospitalisations in Germany. \parencite{Millevoi2024} developed a PINN for short term forecasting COVID-19 Italy using a split training approach, training the PINN on data loss first then physics loss. 5 synthetic scenarios were used for validation, followed by COVID-19 forecasting using Italian data. \parencite{Kharazmi2021} applied PINNs to a range of ODE models, both integer order (the rate of change is dependent on the current state of the system) and fractional order (the rate of change depends on entire history of the system) and time-delay variants to forecast COVID-19 across New York, Rhode Island, Michigan and Italy, with uncertainty quantification included in forecasts. \parencite{https://doi.org/10.48550/arxiv.2506.03897} trained a PINN on synthetic data and used to forecast Influenza cases in Italy, accounting for uncertainty. 
+
+Other PINN models used for forecasting have focused on multi-modal data integration. \parencite{https://doi.org/10.48550/arxiv.2202.10446}, introduced epidemiology informed neural networks (EINNs) to forecast influenza in US states and health and human services regions. They included a feature model for multi-modal data incorporation, including features such as mobility and Google symptom survey findings. A recurrent neural network (RNN) was used. \parencite{Qian2025} used a PINN to forecast COVID-19 cases, deaths and hospitalisations in California, incorporating an ODE model with 9 coupled equations including information on mobility and vaccination.
+\parencite{Qian2025} used a PINN to forecast COVID-19 cases, deaths and hospitalisations in California, incorporating an ODE model with 9 coupled equations including information on mobility and vaccination. 
+
+However, incorporation of spatial structure in PINNs for infectious disease forecasting has been very limited. \parencite{Madden2024} developed a PINN for forecasting measles in England and Wales accounting for measles incidence in the 10 nearest towns and cities. However, they stated that their model could be extended to incorporate a gravity model which incorporates distance and population size into the loss function. Overall, the application of PINNs to spatiotemporal forecasting of infectious disease remains in it's infancy, and further methodological development is needed to account for complex spatiotemporal dependencies in data. The first aim of this project is therefore to develop a spatiotemporal PINN. This could be done using a PINN informed by a metapopulation model, graph neural network (GNN) or partial differential equations (PDEs). 
+
+While physics informed spatiotemporal machine learning approaches for infectious disease prediction exist, they treat spatial coupling as a data driven quantity rather than encoding it into the model by mechanistic modelling. \parencite{https://doi.org/10.48550/arxiv.2411.17372} developed Heat-GNN, incorporating a time-varying SIR model into a GNN. However, spatial structure was encoded as similarity between regions rather than movement of people/importation of infections. \parencite{https://doi.org/10.48550/arxiv.2410.00049} developed EARTH, epidemiology aware neural ODE, which couples locations through learnt edge weights rather than a mechanistically defined importation term. \parencite{Wang2022} develop causal GNN, which encodes spatial structure as learnt GNN attention rates.
+
+PINNs are adept at handling sparse and noisy data, a feature not seen in models such as graph neural networks (GNNs). GNNs require lots of training data \parencite{Liu2024}. Additionally, methods such as epidemiology informed GNNs don't allow for parameter reconstruction or counterfactual scenario modelling. The closest paper to the best of our knowledge is MepoGNN which incorporates graph neural networks into a metapopulation SIR model. However, the ODE residual is not used as a loss term (ODEs are put into the model). Therefore, the model being proposed is likely to be stronger in sparse/noisy data scenarios and MepoGNN can't be used for counterfactual scenario modelling.
+
+Additionally, the second aim of this project is to reconstruct the transmission rate parameter from the SEIR model. Existing models that recover the transmission rate parameter have relied on observing multiple compartments or have made simplifying assumptions that limit their usefulness. For example, \parencite{https://doi.org/10.48550/arxiv.2510.06776} reconstructed the transmission rate by observing the infected compartment, using recovery periods to model transitions into the recovered compartment, and incorporating total population size. Other studies have recovered constant transmission rates. \parencite{https://doi.org/10.48550/arxiv.2506.03897} used Markov chain Monte Carlo (MCMC) to identify parameters that make the PINN fit the data best. However, they assumed transmission rate to be a scalar constant, therefore not accounting for dynamic changes in transmission. Additionally, they had difficulty in recovering the transmission rate at the start of the outbreak, when cases were low. \parencite{Qian2025} found that despite the PINN making reliable predictions for variables, it could not infer the transmission rate parameter. This project therefore aims to recover a time-varying transmission rate from data using PINNs.
+
+Another aim of the project is to incorporate uncertainty into the PINNs by developing Bayesian PINNs \parencite{https://doi.org/10.48550/arxiv.2205.08304, https://doi.org/10.48550/arxiv.2003.06097}. Real world infection data are noisy and incomplete, having high amounts of aleatoric uncertainty (uncertainty due to randomness in the data). Uncertainty also arises from model development, epistemic uncertainty \parencite{https://doi.org/10.48550/arxiv.1910.09457}. Uncertainty quantification has persistently been identified as a vital component of model development for policy \parencite{McCabe2021, Zelner2021, Juul2020}, therefore, it is important that a quantification of uncertainty is provided. Bayesian PINNs (B-PINNs) combine PINNs with Bayesian inference, providing probability distributions over neural network parameters. The stochastic neural network (i.e. neural network with stochastic weights) is trained using Bayesian inference \parencite{https://doi.org/10.48550/arxiv.2007.06823}.
+
+\section{Methods}
+\subsection{Synthetic data generation: SEIR compartmental model}
+Synthetic data was generated using a SEIR compartmental model defined by a system of ODEs (see equations below). The SEIR model was solved numerically using \texttt{SciPy solve\_ivp} (SciPy version 1.15.3) using the Runge Kutta method. 
+
+\begin{align}
+\frac{dS}{dt} &= -\beta \frac{S I}{N} \\
+\frac{dE}{dt} &= \beta \frac{S I}{N} - \sigma E \\
+\frac{dI}{dt} &= \sigma E - \gamma I \\
+\frac{dR}{dt} &= \gamma I
+\end{align}
+
+ The transmission rate parameter ($\beta$) was varied across a range from 0.4 to 0.75. The recovery rate ($\gamma$) was 0.25 and the incubation rate ($\sigma$) was 0.25. The model was simulated for a default period of 100 days. Prior to exporting the data, the model outputs were normalised by dividing each compartment (S, E, I, R) by the total population size (N), ensuring all values were between 0 and 1. Additionally, time was rescaled from 0 to 1. 
+
+ In other scenarios, $\beta$ was also varied over time using a variety of cubic splines constructed using the \texttt{Patsy} package in Python \parencite{Hastie2009-iz}.
+
+Additionally, gaussian observation noise was added to models after simulation. Gaussian observation noise was added to the infected compartment with noise levels ranging from 1\% to 20\%.
+
+\subsection{Real data processing: COVID-19 case data for England from the UK Health Security Agency (UKHSA)}
+The UK COVID-19 UKHSA case data was imported into Python and filtered to cover England only. Then, a 7-day rolling average was taken and the case data was converted into a population fraction. The data was filtered to include cases from July 2020 to April 2022. Time was normalised [0,1]. 
+
+The PINN was trained using data from July 2020 to April 2022 using a rolling window approach. The PINN was trained on weeks 1 - 17 with predictions for weeks 18 - 21. The training window was then shifted by one week, retraining the model from weeks 1 - 18 and forecasting weeks 19 - 22. This was repeated until predictions were made for weeks 90 - 93. This follows the protocol used in \parencite{Qian2025}.
+
+\subsection{Physics informed neural network (PINN)}
+In this study, a PINN framework was applied to SEIR data. The SEIR equations were embedded into the loss function of the neural network. The network was trained to infer the transmission rate. In some scenarios, all the epidemiological parameters and initial conditions were assumed to be known and provided as fixed inputs (\cref{tab:model_parameters}), in others, the network had to learn the transmission and recovery rates. 
+
+
+\begin{table}[h]
+    \centering
+    \caption{Model parameters used}
+    \label{tab:model_parameters}
+    
+    \begin{tabular}{lll}
+        \hline
+        Name & Definition & Value \\
+        \hline
+        $\beta$  & Transmission rate & Estimated by model \\
+        $N$      & Population size   & 56\,000\,000 \\
+        $\sigma$ & Incubation rate   & 0.25 \\
+        $\gamma$ & Recovery rate     & 0.25 \\
+        \hline
+    \end{tabular}
+\end{table}
+
+The PINN architecture used in this study consists of a simple feedforward neural network (FFNN), specifically, a multi-layer perceptron \parencite{Rumelhart1986} with 3 hidden layers with 50 neurons for the SEIR model and a seperate subnetwork with 3 hidden layers with 50 neurons for the transmission rate parameter ($\beta$). For activation functions, tanh was used for the hidden SEIR and $\beta$ layers and softplus was used for the SEIR output layers, ensuring the values could not be greater than 1 \parencite{Dubey2022}, as was done in \parencite{https://doi.org/10.48550/arxiv.2506.03897}(\cref{tab:model_parameters}). 
+
+The loss function consisted of data loss, physics loss (ODE loss), conservation loss (S + E + I + R = 1) and initial condition (IC) loss:
+
+\begin{equation}
+L = L_\text{data} + L_\text{ODE} + L_\text{conservation} + L_\text{IC}
+\end{equation}
+
+There are 4 output layers for the SEIR model each with one neuron, and one output layer for $\beta$ with one neuron. The model architecture is summarised in (\cref{tab:PINN_architecture}). L2 regularisation was applied to hidden layers to prevent overfitting and penalise large parameter values as in \parencite{Qian2025} \parencite{https://doi.org/10.48550/arxiv.1205.2653}. L2 regularisation was applied as 1 x 10-5.
+
+The loss function gradients were calculated using automatic differentiation via TensorFlows \texttt{gradienttape} (TensorFlow version 2.15.0). The Adam optimiser was used with a learning rate of 0.001 \parencite{https://doi.org/10.48550/arxiv.1412.6980}. Physics loss was evaluated at 1000 evenly distributed collocation points. The PINN was trained in TensorFlow. TensorFlow was used due to having advantages over PyTorch for larger scale problems \parencite{bafghi2024comparing}. The PINN was run for 50,000 iterations, consistent with \parencite{Qian2025}. MSE was used as the loss function.
+
+\subsection{Data and code availability}
+The full code can be found at https://github.com/AmberFEPalmer/PINN. A detailed README is available describing each script. The UKHSA COVID-19 data is publically accessible from this link \href{}{https://archive.ukhsa-dashboard.data.gov.uk/coronavirus-dashboard/cases.zip}.
+
+\begin{equation}
+\mathrm{MSE}=\frac{1}{n}\sum_{i=1}^{n}(y_i-\hat{y}_i)^2
+\end{equation}
+
+
+\begin{table}[H]
+    \centering
+    \caption{Architecture of the PINN}
+    \label{tab:PINN_architecture}
+    \begin{tabular}{llll}
+        \toprule
+        Layer & Type & Size & Activation \\
+        \midrule
+        Input & Input & 1 & none \\
+        Hidden 1 (SEIR) & Dense & 50 & tanh \\
+        Hidden 2 (SEIR) & Dense & 50 & tanh \\
+        Hidden 3 (SEIR) & Dense & 50 & tanh \\
+        Output S & Dense & 1 & softplus \\
+        Output E & Dense & 1 & softplus \\
+        Output I & Dense & 1 & softplus \\
+        Output R & Dense & 1 & softplus \\
+        Hidden 1 ($\beta$) & Dense & 50 & tanh \\
+        Hidden 2 ($\beta$) & Dense & 50 & tanh \\
+        Hidden 3 ($\beta$) & Dense & 50 & tanh \\
+        ($\beta$) & Dense & 1 & none \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Evaluation metrics }
+
+To evaluate the performance of the PINN mean absolute error (as a percentage) was used which calculates the absolute difference between the observed and predicted values:
+
+\begin{equation}
+    \text{MAE\%} = \frac{100}{n \bar{y}} \sum_{i=1}^{n} \left| \hat{y}_i - y_i \right|
+\end{equation}
+
+
+\section{Results}
+
+\subsection{PINN forecasting: constant transmission rate, PINN provided with infection data, recovery rate and incubation period}
+
+A range of synthetic datasets were generated using constant transmission rates during the simulation, with values ranging from $\beta$ = 0.75 - $\beta$ = 0.4. The incubation period, $\sigma$, and recovery rate, $\gamma$, were kept constant in all simulations at 0.25. The parameter values correspond to basic reproduction numbers of R = 3, R = 2 and R = 1.6. The generated synthetic SEIR data are shown in (\Cref{fig:syntheticdata}. Synthetic data was used so the PINN could be evaluated under ground truth. The PINN was provided with data on new infected individuals per day, the recovery rate parameter and the incubation period parameter. Under these conditions, the PINN produced accurate forecasts across all transmission rate scenarios, as shown in (\Cref{fig:Forecastingconstanttransmssion} and (\cref{tab:MAEForecastingconstanttransmssion}. 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{Figures/Synthetic_data_varying_beta.png}
+    \caption{Synthetic data simulations with a constant transmission rate under different parameter values. (b) Results when $\beta$ = 0.75, $\gamma$ = 0.25, $\sigma$= 0.25. (c) Results when $\beta$ = 0.5, $\gamma$ = 0.25, $\sigma$= 0.25. (d) Results when $\beta$ = 0.4, $\gamma$ = 0.25, $\sigma$= 0.25. $\beta$ = transmission rate. $\gamma$ = recovery rate. $\sigma$ = rate of progression from being exposed to the infection and becoming infected (latent period). S = susceptible, E = exposed, I = infected, R = recovered. }
+    \label{fig:syntheticdata}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{Figures/PINN_constant_beta.png}
+    \caption{Physics informed neural network forecasting on synthetic epidemiological data with a range of parameter values. (a) Forecasting when $\beta$ = 0.75. (b) Forecasting when $\beta$ = 0.5. (c) Forecasting when $\beta$ = 0.4. Only $\beta$ is learnt by the neural network, $\sigma$ and $\gamma$ are fixed at 0.25. 80/20 train/test split.}
+    \label{fig:Forecastingconstanttransmssion}
+\end{figure}
+
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{llll}
+        \hline
+        Scenario & Mean absolute error \% (MAE)\\
+        \hline
+        Infected compartment $\beta = 0.75$ & 1.45\\
+        Infected compartment $\beta = 0.5$ & 15.68\\
+        Infected compartment $\beta = 0.4$ & 8.92\\
+        \hline
+    \end{tabular}
+    \caption{Mean absolute error on physics informed neural network forecasting on synthetic epidemiological data with a range of parameter values.}
+    \label{tab:MAEForecastingconstanttransmssion}
+\end{table}
+
+
+
+\subsection{PINN forecasting: constant transmission rate, PINN provided with infection data only}
+The PINN was provided with infection data only, i.e. it had to infer the incubation period and recovery period from the data. Under this scenario, the PINN still made accurate forecasts under a range of transmission rate scenarios (\cref{fig:forecastinginfectiononly}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{forecastinginfectiononly.png}
+    \caption{Physics informed neural network forecasting on synthetic epidemiological data with a range of parameter values. (a) Forecasting when $\beta$ = 0.75. (b) Forecasting when $\beta$ = 0.5. (c) Forecasting when $\beta$ = 0.4. Only $\beta$, $\sigma$ and $\gamma$ are learnt by the network}
+    \label{fig:forecastinginfectiononly}
+\end{figure}
+
+\subsection{PINN can reconstruct the transmission rate parameter from infection data, given the incubation period and recovery rate parameters}
+
+The PINN is able to reconstruct the transmission rate parameter from infection data, given the incubation period and recovery rate parameters with high accuracy.
+(\cref{fig:ReconstructBinfectionandparameters})
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{parametergivenincubationrecover.png}
+    \caption{Physics informed neural network parameter reconstruction on synthetic epidemiological data with a range of parameter values. (a) Transmission rate parameter reconstruction when $\beta$ = 0.75. (b) Transmission rate parameter reconstruction when $\beta$ = 0.5. (c) Transmission rate parameter reconstruction when $\beta$ = 0.4. Only $\beta$ is learnt by the neural network, $\sigma$ and $\gamma$ are fixed at 0.25. }
+    \label{fig:ReconstructBinfectionandparameters}
+\end{figure}
+
+\subsection{PINN can't reconstruct the transmission rate parameter from only infection data}
+The PINN is unable to reconstruct the transmission rate parameter from only infection data. (\cref{fig:cantreconstructparameter}) Values for $\beta$ are consistently underpredicted.
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{cantreconstructparameter.png}
+    \caption{Physics informed neural network parameter reconstruction on synthetic epidemiological data with a range of parameter values. (a) Transmission rate parameter reconstruction when $\beta$ = 0.75. (b) Transmission rate parameter reconstruction when $\beta$ = 0.5. (c) Transmission rate parameter reconstruction when $\beta$ = 0.4. Only infection data is provided.}
+    \label{fig:cantreconstructparameter}
+\end{figure}
+
+\subsection{Synthetic data generation: time-varying transmission rate - beta as a linear function}
+
+Another synthetic data scenario was generated where $\beta$ was modelled as a linear function, varying over time during the simulation (\cref{fig:betalinearfunction}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{betalinearfunction.png}
+    \caption{Synthetic SEIR model with time-varying transmission. $\beta$ changes over time as a linear function. (a) $\beta$ over time in the simulation. (b) Dynamics of S, E, I, R compartments}
+    \label{fig:betalinearfunction}
+\end{figure}
+
+\subsection{PINN can forecast on synthetic data with time-varying transmission when given infection data, incubation period and recovery rate parameters}
+
+The PINN could handle forecasting using synthetic data with time-varying transmission when given infection data, incubation period and recovery rate parameters. The forecast generated by the PINN was very similar to the observed data (\cref{fig:forecastingtimevarying}).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{forecastingtimevarying.png}
+    \caption{PINN can forecast accurately when beta changes over time as a linear function when given infection data, incubation period and recovery rate parameters}
+    \label{fig:forecastingtimevarying}
+\end{figure}
+
+\subsection{PINN is able to forecast on synthetic data with time-varying transmission when given infection data only}
+
+The PINN could handle forecasting using synthetic data with time-varying transmission when given infection data only. The forecast generated by the PINN was very similar to the observed data
+(\cref{fig:Forecastingtimevaringalllearnable}).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{Forecastingtimevaringalllearnable.png}
+    \caption{PINN can forecast accurately when beta changes over time as a linear function when given infection data only}
+    \label{fig:Forecastingtimevaringalllearnable}
+\end{figure}
+
+
+\subsection{PINN can't reproduce the transmission rate parameter when it varies over time as a linearpeicewise function when given infection data, incubation period and recovery rate parameters}
+(\cref{fig:predictbetalinearfunction})
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{predictbetalinearfunction.png}
+    \caption{PINN can't reproduce the transmission rate parameter when beta changes over time as a linear function when given infection data, incubation period and recovery rate parameters}
+    \label{fig:predictbetalinearfunction}
+\end{figure}
+
+\subsection{PINN can't reproduce the transmission rate parameter when it varies over time as a linear peicewise function when given infection data only}
+
+
+
+(\cref{fig:predictbetalinearfunctionalllearnable})
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{predictbetalinearfunctionalllearnable.png}
+    \caption{PINN can't reproduce the transmission rate parameter when beta changes over time as a linear function when given infection data only}
+    \label{fig:predictbetalinearfunctionalllearnable}
+\end{figure}
+
+
+
+
+\subsection{Gaussian observation noise}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{Figures/Synthetic_data_noise.png}
+    \caption{Synthetic data simulations varying amounts of Gaussian observation noise added to the infected compartment. (a) 5\% gaussian noise added to the infected compartment. (b) 10\% gaussian noise added to the infected compartment. (c) 15\% gaussian noise added to the infected compartment. (d) 20\% gaussian noise added the infected compartment}
+    \label{fig:syntheticdatanoise}
+\end{figure}
+
+\subsection{UKHSA COVID-19 case data England}
+
+PINN trained on data from July 2020 – April 2022
+Rolling window approach
+Initial training on weeks 1 – 17 with predictions for weeks 18 to 21
+Training window then shifted by one week
+Model trained on weeks 1 – 18 and forecasting weeks 19 – 22
+Repeated for all 93 weeks
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1\linewidth]{COVIDEngland.png}
+    \caption{PINN forecasting on UKHSA COVID-19 data England. (a) 1 week-ahead forecasting. (b) 2 week-ahead forecasting. (c) 3 week-ahead forecasting. (d) 4 week-ahead forecasting}
+    \label{fig:COVIDEngland}
+\end{figure}
+
+
+\section{Discussion/future directions}
+
+\begin{itemize}
+    \item Testing the model on more real-world epidemiological data e.g. RKI data
+    \item Multi-modal data integration e.g. hospitalisations, deaths, wastewater?
+    \item Could embed more complex architectures e.g. transformer, LSTM
+    \item Foundation multi-pathogen model? \parencite{Lau2026}
+    \item Spatial PINN
+    \item See if there is a way that the transmission rate can be reproduced by the PINN
+    \item Use an agent-based model for testing on more synthetic epidemiological data. Would allow testing on a wider range of epidemiological scenarios.
+    \item Because incorporating space by a metapopulation model is conceptually similar to developing an age-structured model, an age structured PINN could be developed. Important for infections such as Varicella.
+    \item Develop Bayesian PINN for uncertainty quantification
+    \item Self adjusting PINN weights \parencite{https://doi.org/10.48550/arxiv.2009.04544}
+    \item Symbolic regression on PINN outputs?
+    
+\end{itemize}
+
+
+\subsection{Extending "Toward optimal disease surveillance with graph-based active
+learning"}
+
+PINN good at handling noisy and sparse data. When only one node is observed, PINN can handle data sparsity. PINN would also provide information on why locations need testing e.g. high importation risk due to proximity to outbreak. PINN advantage is in early iterations which as shown in the paper are important for small test budgets \parencite{Tsui2024}.
+
+
+
+\printbibliography
+
+\end{document}
