@@ -29,3 +29,5 @@ pinn_env
 Spatial_PINN.py
 PDE_model.py
 .positai
+*.pdf
+

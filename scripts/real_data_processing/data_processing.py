@@ -26,7 +26,8 @@ data['newCases_smooth'] = (
 
 ### Convert directly to population fraction (NO rolling sum)
 N = 56_000_000
-data['I_obs'] = data['newCases_smooth'] / N
+infectious_days = 4  # 1/gamma = 1/0.25
+data['I_obs'] = (data['newCases_smooth'] * infectious_days) / N
 
 ### Define study period
 mask = (
@@ -36,12 +37,12 @@ mask = (
 
 data_study = data[mask].copy().reset_index(drop=True)
 
-### Weekly aggregation (USE SUM for incidence consistency)
+### Weekly aggregation
 data_weekly = (
     data_study
     .set_index('date')
-    .resample('W')
-    .sum(numeric_only=True)
+    .resample('W-SAT', label='left', closed='left')  # or 'W-MON'
+    .mean(numeric_only=True)
     .reset_index()
     .dropna(subset=['I_obs'])
 )

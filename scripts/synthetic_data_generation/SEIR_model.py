@@ -5,26 +5,54 @@ import pandas as pd
 import os
 
 ### Synthetic data generation for PINN
+### Simulation parameters — fixed across all scripts 
+DAYS  = 100
+N_VAL = 100001
+SIGMA = 0.25
+GAMMA = 0.25
+I0 = 1
+E0 = 0
+R0 = 0
+S0 = N_VAL - I0
 
-### Initial conditions
-E0, I0, R0, S0 = 0, 1, 0, 100000
-N = 100001
-days = 140
+### Plot style — fixed across all scripts 
+plt.rcParams.update({
+    'font.family': 'sans-serif',
+    'font.size': 12,
+    'axes.labelsize': 13,
+    'axes.titlesize': 14,
+    'legend.fontsize': 11,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'lines.linewidth': 2,
+    'axes.grid': True,
+    'grid.alpha': 0.3,
+})
 
-### Parameters
+COLOURS = {
+    "S": "#2ca02c",
+    "E": "#ff7f0e",
+    "I": "#d62728",
+    "R": "#1f33b4",
+    "beta":"#008094",
+}
+
+### Beta values to simulate
 beta_values = [0.75, 0.5, 0.4]
-sigma, gamma = 0.25, 0.25
+
+### Output directories 
+output_dir  = "../../png_files"
+data_folder = os.path.join("..", "..", "data")
 
 ### SEIR model
 def ode_model(t, y, beta, sigma, gamma, N):
     S, E, I, R = y
     dSdt = -beta * S * I / N
-    dEdt = beta * S * I / N - sigma * E
-    dIdt = sigma * E - gamma * I
-    dRdt = gamma * I
+    dEdt =  beta * S * I / N - sigma * E
+    dIdt =  sigma * E - gamma * I
+    dRdt =  gamma * I
     return [dSdt, dEdt, dIdt, dRdt]
 
-### ODE solver
 def ode_solver(t, initial_conditions, parameters, N):
     beta, sigma, gamma = parameters
     return solve_ivp(
@@ -35,71 +63,113 @@ def ode_solver(t, initial_conditions, parameters, N):
         t_eval=t
     )
 
-### Run model
 def run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N):
     t = np.linspace(0, days, days + 1)
     sol = ode_solver(t, [S0, E0, I0, R0], [beta, sigma, gamma], N)
     S, E, I, R = sol.y
     return t, S, E, I, R
 
-### Output directories
-output_dir = "../../png_files"
-data_folder = os.path.join("..", "..", "data")
+### Store results for panel plot
+results = {}
 
-### Loop over beta values
+### Loop over beta values and simulate SEIR dynamics
 for beta in beta_values:
+    t, S, E, I, R = run_seir(DAYS, S0, E0, I0, R0, beta, SIGMA, GAMMA, N_VAL)
 
-    t, S, E, I, R = run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N)
+    ### Normalise by population
+    S_norm = S / N_VAL
+    E_norm = E / N_VAL
+    I_norm = I / N_VAL
+    R_norm = R / N_VAL
 
-    ### Normalize
-    N_norm = S0 + E0 + I0 + R0
-    S_norm = S / N_norm
-    E_norm = E / N_norm
-    I_norm = I / N_norm
-    R_norm = R / N_norm
-
-    ### Print values for t and I
     print(f"\n--- beta = {beta} ---")
     print(t)
     print(I)
 
-    ### Plot results from SEIR model
+    ### Compute R0
+    R0_val = beta / GAMMA
+
+    ### Store for panel
+    results[beta] = dict(t=t, S=S, E=E, I=I, R=R, R0_val=R0_val)
+
+    ### Individual plot
     plt.figure(figsize=(10, 6))
-    plt.plot(t, S)
-    plt.plot(t, E)
-    plt.plot(t, I)
-    plt.plot(t, R)
-    plt.legend(["S", "E", "I", "R"])
-    plt.title(f"SEIR model (β={beta})")
-    plt.xlabel("Days")
-    plt.ylabel("Number of people in each compartment")
-    plt.grid(True)
-    plt.savefig(os.path.join(output_dir, f'SEIR_140_days_constant_beta_{beta}.png'))
+    plt.plot(t, S, color=COLOURS["S"], label=r"$S(t)$")
+    plt.plot(t, E, color=COLOURS["E"], label=r"$E(t)$")
+    plt.plot(t, I, color=COLOURS["I"], label=r"$I(t)$")
+    plt.plot(t, R, color=COLOURS["R"], label=r"$R(t)$")
+    plt.xlabel("Time (days)")
+    plt.ylabel("Number of individuals")
+    plt.legend()
+    plt.text(
+        0.98, 0.97,
+        rf"$\mathcal{{R}}_0 = {R0_val:.2f}$",
+        transform=plt.gca().transAxes,
+        fontsize=13,
+        verticalalignment='top',
+        horizontalalignment='right',
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='gray', alpha=0.8)
+    )
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, f'SEIR_constant_beta_{beta}.pdf'), bbox_inches='tight', dpi=300)
     plt.show()
 
     ### Normalise time for PINN
     t_norm = t / t.max()
 
-    ### Export SEIR results to a csv file
+    ### Export SEIR results to csv
     SEIR_data = pd.DataFrame({
-    "time": t_norm,
-    "S": S_norm,
-    "E": E_norm,
-    "I": I_norm,
-    "R": R_norm
+        "time": t_norm,
+        "S": S_norm,
+        "E": E_norm,
+        "I": I_norm,
+        "R": R_norm,
     })
     print(SEIR_data)
-    csv_path = os.path.join(data_folder, f"SEIR_140_days_constant_beta_{beta}.csv")
+    csv_path = os.path.join(data_folder, f"SEIR_data_beta_{beta}.csv")
     SEIR_data.to_csv(csv_path, index=False)
-    
-    
-    from scipy.optimize import minimize
+    print(f"Saved: {csv_path}")
 
-def loss(params, t, I_data):
-    beta = params[0]
-    _, _, _, I_pred, _ = run_seir(days, S0, E0, I0, R0, beta, sigma, gamma, N)
-    I_pred_norm = I_pred / N
-    return np.mean((I_pred_norm - I_data)**2)
+### 1x3 panelled figure for all beta values
+fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharex=True, sharey=True)
 
-result = minimize(loss, x0=[0.3], args=(t_norm, I_noisy))
-beta_est = result.x[0]
+for i, (ax, beta) in enumerate(zip(axes, beta_values)):
+    res = results[beta]
+    t, S, E, I, R, R0_val = res['t'], res['S'], res['E'], res['I'], res['R'], res['R0_val']
+
+    ax.plot(t, S, color=COLOURS["S"], label=r"$S(t)$")
+    ax.plot(t, E, color=COLOURS["E"], label=r"$E(t)$")
+    ax.plot(t, I, color=COLOURS["I"], label=r"$I(t)$")
+    ax.plot(t, R, color=COLOURS["R"], label=r"$R(t)$")
+    ax.set_title(rf"$\beta = {beta}$")
+
+    # R0 annotation — top right
+    ax.text(
+        0.98, 0.97,
+        rf"$\mathcal{{R}}_0 = {R0_val:.2f}$",
+        transform=ax.transAxes,
+        fontsize=11,
+        verticalalignment='top',
+        horizontalalignment='right',
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='gray', alpha=0.8)
+    )
+
+    # Panel label — top left
+    ax.text(
+        -0.08, 1.02,
+        f"({chr(97 + i)})",
+        transform=ax.transAxes,
+        fontsize=13,
+        verticalalignment='bottom',
+        horizontalalignment='left',
+    )
+
+    ax.legend(fontsize=9)
+
+fig.supxlabel("Time (days)", fontsize=13)
+fig.supylabel("Number of individuals", fontsize=13)
+
+plt.tight_layout()
+plt.savefig(os.path.join(output_dir, "SEIR_beta_panel.pdf"), bbox_inches='tight', dpi=300)
+plt.show()
+plt.close()
