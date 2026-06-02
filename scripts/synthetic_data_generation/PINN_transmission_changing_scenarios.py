@@ -208,3 +208,95 @@ for sc in scenarios:
     csv_path = os.path.join(data_folder, f"{label}.csv")
     SEIR_time_varying_data.to_csv(csv_path, index=False)
     print(f"Saved: {csv_path}")
+
+data_folder = os.path.join("..", "..", "data")
+output_dir  = "../../png_files"
+os.makedirs(output_dir, exist_ok=True)
+ 
+N_val      = 100001
+days_total = 100
+ 
+scenarios = [
+    {"label": "beta_spline_slow_rise",      "csv": "beta_spline_slow_rise.csv",      "title": "Slow Rise",       "difficulty": "Easy"},
+    {"label": "beta_spline_gradual_decline", "csv": "beta_spline_gradual_decline.csv","title": "Gradual Decline", "difficulty": "Easy"},
+    {"label": "beta_spline_two_waves",       "csv": "beta_spline_two_waves.csv",      "title": "Two Waves",       "difficulty": "Medium"},
+    {"label": "beta_spline_escalating",      "csv": "beta_spline_escalating.csv",     "title": "Escalating",      "difficulty": "Hard"},
+    {"label": "beta_spline_rapid",           "csv": "beta_spline_rapid.csv",          "title": "Rapid",           "difficulty": "Hard"},
+]
+ 
+### 5 rows x 2 cols — left: SEIR, right: beta
+fig, axes = plt.subplots(5, 2, figsize=(18, 34))
+fig.subplots_adjust(hspace=0.6, wspace=0.35, left=0.12, right=0.97, top=0.97, bottom=0.04)
+ 
+panel_idx = 0  # a, b, c, ... across all subplots
+ 
+for row, scenario in enumerate(scenarios):
+    label      = scenario["label"]
+    title      = scenario["title"]
+    difficulty = scenario["difficulty"]
+ 
+    ### Load data
+    data     = pd.read_csv(os.path.join(data_folder, scenario["csv"]))
+    t_unnorm = data["time"].values * days_total
+ 
+    S = data["S"].values * N_val
+    E = data["E"].values * N_val
+    I = data["I"].values * N_val
+    R = data["R"].values * N_val
+    beta = data["beta"].values
+ 
+    ### -------------------------------------------------------
+    ### Left column — SEIR compartments
+    ### -------------------------------------------------------
+    ax_seir = axes[row, 0]
+ 
+    ax_seir.plot(t_unnorm, S, color=COLOURS["S"], label=r"$S(t)$")
+    ax_seir.plot(t_unnorm, E, color=COLOURS["E"], label=r"$E(t)$")
+    ax_seir.plot(t_unnorm, I, color=COLOURS["I"], label=r"$I(t)$")
+    ax_seir.plot(t_unnorm, R, color=COLOURS["R"], label=r"$R(t)$")
+ 
+    ax_seir.set_title(f"{title}")
+    ax_seir.set_ylabel("Individuals", labelpad=8)
+    ax_seir.legend(fontsize=9)
+ 
+    ### Panel label
+    ax_seir.annotate(
+        f"({chr(97 + panel_idx)})",
+        xy=(0, 1), xycoords='axes fraction',
+        xytext=(-5, 10), textcoords='offset points',
+        fontsize=13, verticalalignment='bottom', horizontalalignment='right',
+        annotation_clip=False,
+    )
+    panel_idx += 1
+ 
+    ### -------------------------------------------------------
+    ### Right column — beta(t)
+    ### -------------------------------------------------------
+    ax_beta = axes[row, 1]
+ 
+    ax_beta.scatter(t_unnorm, beta, color="#1f33b4", s=30, alpha=0.5)
+ 
+    ax_beta.set_title(rf"$\beta(t)$ — {title}")
+    ax_beta.set_ylabel(r"$\beta(t)$", labelpad=8)
+    ax_beta.set_ylim(0, max(beta.max() * 1.2, 0.5))
+ 
+    ### Panel label
+    ax_beta.annotate(
+        f"({chr(97 + panel_idx)})",
+        xy=(0, 1), xycoords='axes fraction',
+        xytext=(-5, 10), textcoords='offset points',
+        fontsize=13, verticalalignment='bottom', horizontalalignment='right',
+        annotation_clip=False,
+    )
+    panel_idx += 1
+ 
+### Shared x label
+for ax in axes[-1, :]:
+    ax.set_xlabel("Time (days)")
+ 
+for ax in axes.flatten():
+    ax.title.set_position([0.5, 1.08])
+ 
+plt.savefig(os.path.join(output_dir, "SEIR_beta_time_varying_panel.pdf"), bbox_inches='tight', dpi=300)
+plt.savefig(os.path.join(output_dir, "SEIR_beta_time_varying_panel.png"), bbox_inches='tight', dpi=300)
+plt.show()

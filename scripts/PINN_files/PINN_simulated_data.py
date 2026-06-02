@@ -115,7 +115,7 @@ for scenario in scenarios:
     t_data = t_data[:N_obs].reshape(-1, 1)
     I_data = I_data.reshape(-1, 1)
 
-    split = int(0.8 * N_obs)
+    split = int(1.0 * N_obs)
     t_train = t_data[:split];  I_train = I_data[:split]
     t_test = t_data[split:];  I_test  = I_data[split:]
 
@@ -309,7 +309,7 @@ for scenario in scenarios:
 
     ### Predictions for plotting
     t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
-    S_pred, E_pred, I_pred, R_pred, _ = model(t_tensor)
+    S_pred, E_pred, I_pred, R_pred, beta_pred_full = model(t_tensor, training=False)
 
     def to_numpy_flat(arr):
         return arr.numpy().flatten() if hasattr(arr, 'numpy') else arr.flatten()
@@ -351,7 +351,7 @@ for scenario in scenarios:
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_80_20.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_100_10.png'))
     plt.close()
 
     ### PINN prediction vs observed
@@ -365,7 +365,7 @@ for scenario in scenarios:
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_beta_{label}_80_20.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_beta_{label}_100_10.png'))
     plt.close()
 
     ### Estimated beta
@@ -387,7 +387,7 @@ for scenario in scenarios:
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{label}_80_20.png'))
+    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{label}_100_10.png'))
     plt.close()
 
     ### Susceptible
@@ -458,11 +458,12 @@ for scenario in scenarios:
         "S_pred": to_numpy_flat(S_pred),
         "E_pred": to_numpy_flat(E_pred),
         "R_pred": to_numpy_flat(R_pred),
+        "beta_pred": to_numpy_flat(beta_pred_full),
     })
-    pred_df.to_csv(os.path.join(output_dir, f"PINN_predictions_{label}_80_20.csv"), index=False)
+    pred_df.to_csv(os.path.join(output_dir, f"PINN_predictions_{label}_100_10.csv"), index=False)
 
 ### Save evaluation metrics to CSV
 metrics_df = pd.DataFrame(all_metrics)
-metrics_df.to_csv(os.path.join(output_dir, "PINN_error_metrics_80_20.csv"), index=False)
-print("\nMetrics saved to PINN_error_metrics_80_20  .csv")
+metrics_df.to_csv(os.path.join(output_dir, "PINN_error_metrics_100_10.csv"), index=False)
+print("\nMetrics saved to PINN_error_metrics_100_10  .csv")
 print(metrics_df.to_string(index=False))

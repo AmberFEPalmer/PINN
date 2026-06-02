@@ -44,7 +44,10 @@ def create_pinn_model(P):
     t_input = Input(shape=(1,), dtype=tf.float32, name='time_input')
     patch_input = Input(shape=(1,), dtype=tf.int32, name='patch_input')
  
+    ### https://www.tensorflow.org/api_docs/python/tf/keras/layers/Embedding
+    ### each patch converted into a learnt vector of numbers
     patch_embed = tf.keras.layers.Embedding(
+        ### input_dim = number of patches, output_dim = size of embedding vector
         input_dim=P,
         output_dim=8,
         name='patch_embedding'
@@ -95,7 +98,10 @@ def loss_function(t_col, t_data_loss, I_data_list, net, I_scale, P, smooth_beta=
     gamma = tf.constant(0.25, dtype=tf.float32)
     N = tf.constant(50000.0, dtype=tf.float32)
  
-    ### Migration matrix
+    ### Migration matrix - rate individuals move between patches
+    ### 5 x 5 matrix with -0.01 on diagonal and 0.0025 on off-diagonal
+    ### on diagonal = rate at which individuals leave a patch
+    ### off-diagonal = rate at which individuals enter a patch from each other patch
     M = np.full((P, P), 0.01 / (P - 1))
     np.fill_diagonal(M, -0.01)
     M_tensor = tf.constant(M, dtype=tf.float32)

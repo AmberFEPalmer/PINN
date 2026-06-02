@@ -353,7 +353,9 @@ for scenario in scenarios:
         "S_pred": to_numpy_flat(S_pred),
         "E_pred": to_numpy_flat(E_pred),
         "R_pred": to_numpy_flat(R_pred),
+        "beta_pred": to_numpy_flat(beta_pred_full),
     })
+    
     pred_df.to_csv(
         os.path.join(output_dir, f"PINN_all_learnable_predictions_{label}_100_0.csv"),
         index=False

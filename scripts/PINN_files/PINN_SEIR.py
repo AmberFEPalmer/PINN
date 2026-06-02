@@ -9,6 +9,26 @@ from tensorflow.keras import regularizers
 import pandas as pd
 import os
 
+### Plot style — fixed across all scripts
+plt.rcParams.update({
+    'font.size': 12,
+    'axes.labelsize': 13,
+    'axes.titlesize': 14,
+    'legend.fontsize': 11,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'lines.linewidth': 2,
+    'axes.grid': True,
+    'grid.alpha': 0.3,
+})
+
+COLOURS = {
+    "S": "#2ca02c",
+    "E": "#ff7f0e",
+    "I": "#d62728",
+    "R": "#1f33b4",
+}
+
 ### https://github.com/maziarraissi/PINNs
 ### https://vitalitylearning.medium.com/solving-a-first-order-ode-with-physics-informed-neural-networks-22e385f09d35
 ### https://i-systems.github.io/tutorial/KSNVE/220525/01_PINN.html
@@ -153,7 +173,7 @@ def compute_loss(t_col, t_data_loss, I_data_loss, net,
     ### Total loss
     total = (
         1.0 * data_loss +
-        0.001 * ode_loss +
+        0.01 * ode_loss +
         0.01 * ic_loss +
         0.01 * conservation_loss
     )
@@ -310,11 +330,14 @@ for h, ax in zip(range(1, 5), axes.flatten()):
     obs_arr = np.array(horizon_results[h]["obs"])   * N_val
     naive_arr = np.array(horizon_results[h]["naive"]) * N_val
 
-    ax.plot(t_vals, obs_arr, color="black", lw=2, linestyle="--", label="Observed")
-    ax.plot(t_vals, pred_arr, color=COLOURS["I"], s=10, alpha=0.5, zorder=3, label='Infected - data')
+    ax.plot(t_vals, obs_arr, color="#004F94", lw=1.5, label="Observed")
+    ax.plot(t_vals, pred_arr,color="#ff7ee3", lw=1.5,
+            label=f"PINN {h}-week")
+    ax.plot(t_vals, naive_arr, color="orange",  lw=1.0,
+            linestyle="--", label="Naive baseline")
     ax.set_title(f"{h}-week-ahead forecast")
     ax.set_xlabel("Normalised time")
-    ax.set_ylabel("Infectious individuals")
+    ax.set_ylabel("New cases per week")
     ax.legend(fontsize=8)
     ax.grid(True)
 
@@ -330,12 +353,13 @@ t_vals = np.array(horizon_results[1]["t"])
 pred_arr = np.array(horizon_results[1]["pred"])  * N_val
 obs_arr = np.array(horizon_results[1]["obs"])   * N_val
 naive_arr = np.array(horizon_results[1]["naive"]) * N_val
-ax.plot(t_vals, obs_arr, color="black", lw=1.5, label="Observed")
-ax.plot(t_vals, pred_arr, color=COLOURS["I"], s=10, alpha=0.5, zorder=3, label='PINN 1-week')
+ax.plot(t_vals, obs_arr, color="#004F94", lw=1.5, label="Observed")
+ax.plot(t_vals, pred_arr, color="#ff7ee3", lw=1.5, label="PINN 1-week")
+ax.plot(t_vals, naive_arr, color="orange",  lw=1.0,
+        linestyle="--", label="Naive baseline")
 ax.set_title("SEIR-PINN rolling window: 1-week-ahead forecast", fontsize=14)
 ax.set_xlabel("Normalised time")
-ax.set_ylabel("Infectious individuals")
-ax.set_xlim(t_data_norm[First_train_weeks], 1.0)
+ax.set_ylabel("New cases per week")
 ax.legend()
 ax.grid(True)
 plt.tight_layout()
@@ -349,12 +373,12 @@ fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=True)
 for h, ax in zip(range(1, 5), axes.flatten()):
     t_vals = np.array(horizon_beta[h]["t"])
     R_arr  = np.array(horizon_beta[h]["beta"]) / gamma_plot
-    ax.plot(t_vals, R_arr, color="#444444", lw=2, linestyle='-',
+
+    ax.plot(t_vals, R_arr, color="#ff7ee3", lw=1.5,
             label=f"R(t) — {h}-week ahead")
-    ax.axhline(y=1.0, color="#1f33b4", lw=1, linestyle="--",
+    ax.axhline(y=1.0, color="gray", lw=1, linestyle="--",
                label="R = 1 threshold")
     ax.set_title(f"{h}-week-ahead R(t)")
-    ax.set_xlim(t_data_norm[First_train_weeks], 1.0)
     ax.set_xlabel("Normalised time (study period)")
     ax.set_ylabel("R(t) = β(t) / γ")
     ax.legend()
@@ -373,10 +397,9 @@ plt.plot(t_data_norm.reshape(-1), I_data.reshape(-1) * N_val,
 plt.title("Weekly reported COVID-19 cases in England (Jul 2020 – Apr 2022)",
           fontsize=13)
 plt.xlabel("Normalised time")
-plt.ylabel("Infectious individuals")
+plt.ylabel("New cases per week")
 plt.grid(True)
 plt.tight_layout()
-ax.set_xlim(t_data_norm[First_train_weeks], 1.0)
 plt.savefig("observed_weekly_cases.png", dpi=150)
 plt.show()
 

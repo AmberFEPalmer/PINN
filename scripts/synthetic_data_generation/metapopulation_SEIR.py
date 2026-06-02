@@ -80,7 +80,6 @@ for i in range(P):
 
 plt.xlabel("Days")
 plt.ylabel("Infected")
-plt.title("5-patch SEIR model")
 plt.legend(ncol=2)
 plt.grid(True)
 plt.show()

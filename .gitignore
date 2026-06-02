@@ -30,4 +30,7 @@ Spatial_PINN.py
 PDE_model.py
 .positai
 *.pdf
-
+echo "*.png" >> .gitignore
+echo "*.jpg" >> .gitignore
+.RData
+.python-version
