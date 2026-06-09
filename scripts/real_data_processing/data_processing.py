@@ -27,11 +27,11 @@ data['newCases_smooth'] = (
 ### Convert directly to population fraction (NO rolling sum)
 N = 56_000_000
 infectious_days = 4  # 1/gamma = 1/0.25
-data['I_obs'] = (data['newCases_smooth'] * infectious_days) / N
+data['I_obs'] = (data['newCases_smooth'] / N)
 
 ### Define study period
 mask = (
-    (data['date'] >= '2020-07-01') &
+    (data['date'] >= '2020-08-01') &  
     (data['date'] <= '2022-04-30')
 )
 
@@ -65,6 +65,9 @@ np.save(
     "../../data/I_data_study.npy",
     data_weekly['I_obs'].values.reshape(-1, 1)
 )
+
+np.save("../../data/dates_study.npy",
+        data_weekly['date'].values.astype('datetime64[D]'))
 
 ### Collocation points
 np.save(
@@ -159,5 +162,5 @@ plt.xlabel("Normalised time")
 plt.ylabel("Infected (count)")
 plt.grid(True)
 plt.tight_layout()
-plt.savefig("observed_normalised.png", dpi=150)
+plt.savefig("../../data/observed_normalised.png", dpi=150)
 plt.show()

@@ -10,7 +10,7 @@ import pandas as pd
 import os
  
 data_folder = os.path.join("..", "synthetic_data_generation")
-output_dir  = os.path.join("..", "..", "png_files")
+output_dir = os.path.join("..", "..", "png_files")
 os.makedirs(output_dir, exist_ok=True)
  
 data_path = os.path.join(data_folder, "SEIR_metapopulation_5_patch.csv")
@@ -23,7 +23,7 @@ N_obs = len(t_data)
 split = int(0.9 * N_obs)
  
 t_train = tf.convert_to_tensor(t_data[:split], dtype=tf.float32)
-t_test  = tf.convert_to_tensor(t_data[split:], dtype=tf.float32)
+t_test = tf.convert_to_tensor(t_data[split:], dtype=tf.float32)
  
 ### SEIR
 P = 5
@@ -135,7 +135,7 @@ def loss_function(t_col, t_data_loss, I_data_list, net, I_scale, P, smooth_beta=
     E = tf.concat(E_list, axis=1)
     I = tf.concat(I_list, axis=1)
     R = tf.concat(R_list, axis=1)
-    beta  = tf.concat(beta_list,  axis=1)
+    beta = tf.concat(beta_list,  axis=1)
     dS_dt = tf.concat(dS_dt_list, axis=1)
     dE_dt = tf.concat(dE_dt_list, axis=1)
     dI_dt = tf.concat(dI_dt_list, axis=1)
