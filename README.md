@@ -6,10 +6,12 @@ PINN files
 1. PINN_simulated_data.py = PINN tested on simulated SIR models, beta learnt by the model, recovery rate and incubation parameters provided
 2. PINN_all_learnable_parameters.py = PINN tested on simulated SIR models, beta, recovery rate and incubation parameters learnt by the model
 3. PINN_SEIR.py = PINN on real world COVID-19 data
-4. PINN_metapopulation = PINN on metapopulation SIR model with 5 patches
+4. PINN_hospitalisations_deaths.py = PINN on real world COVID-19 cases, hospitalisations and deaths data
+5. PINN_metapopulation = PINN on metapopulation SIR model with 5 patches
 
 Data files
 1. Data_processing.py = processing UKHSA COVID-19 case data
-2. SEIR_model.py = developing SEIR model to generate synthetic data
-3. PINN_transmission_changing.py = developing SEIR models with beta changing as a spline
-4. SEIR_Gaussian_noise.py = gaussian noise added to infected compartment of SEIR model
+2. deaths_hospitalisations.py = processing UKHSA COVID-19 hospitalisations and deaths
+3. SEIR_model.py = developing SEIR model to generate synthetic data
+4. PINN_transmission_changing.py = developing SEIR models with beta changing as a spline
+5. SEIR_Gaussian_noise.py = gaussian noise added to infected compartment of SEIR model
