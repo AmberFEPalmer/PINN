@@ -513,3 +513,9 @@ fig.suptitle("7-Compartment SEIR-PINN: Cases (1–4 weeks ahead)", fontsize=14)
 plt.tight_layout()
 plt.savefig("7comp_cases_grid.png", dpi=150)
 plt.show()
+
+### Save
+import os, pickle
+os.makedirs("../../forecasts", exist_ok=True)
+with open("../../forecasts/PINN.pkl", "wb") as f:
+    pickle.dump({"all_pred": all_pred, "all_obs": all_obs, "all_naive": all_naive}, f)
