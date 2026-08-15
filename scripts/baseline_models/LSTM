@@ -1,0 +1,219 @@
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import warnings
+warnings.filterwarnings("ignore")
+
+### LSTM model for 1, 2, 3 and 4 week predictions
+### forecasting cases, deaths and hospitalisations
+
+### set seed for reproducibility 
+np.random.seed(42)
+torch.manual_seed(42)
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+### Plot style — fixed across all scripts
+plt.rcParams.update({
+    'font.size': 12,
+    'axes.labelsize': 13,
+    'axes.titlesize': 14,
+    'legend.fontsize': 11,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'lines.linewidth': 2,
+    'axes.grid': True,
+    'grid.alpha': 0.3,
+})
+
+COLOURS = {
+    "S": "#2ca02c",
+    "E": "#ff7f0e",
+    "I": "#d62728",
+    "R": "#1f33b4",
+}
+
+### load in data
+N_val = 56_000_000
+I_data = np.load("../../data/I_data_study.npy").reshape(-1).astype("float64")
+H_data = np.load("../../data/H_data_study.npy").reshape(-1).astype("float64")
+D_data = np.load("../../data/D_data_study.npy").reshape(-1).astype("float64")
+study_dates = np.load("../../data/dates_study.npy").astype("datetime64[D]")
+N_total_points = len(I_data)
+study_dates = study_dates[:N_total_points]
+
+series = ["cases", "deaths", "hosp"]
+data = {"cases": I_data, "deaths": D_data, "hosp": H_data}
+LABEL = {"cases": "daily cases", "hosp": "daily admissions", "deaths": "daily deaths"}
+
+### configure LSTM
+First_train_weeks = 17    
+Forecast_horizon = 4
+WINDOW_SIZE = 5       
+HIDDEN, LAYERS = 50, 2 
+EPOCHS = 10000   
+PATIENCE = 0     
+learning_rate = 1e-3
+LEAK_LIKE_PAPER   = False    # True => fit scaler on whole series (reproduces reference leakage)
+
+print(f"study grid: {N_total_points} weeks ({study_dates[0]} -> {study_dates[-1]}) | device={device}")
+
+
+class RNNPredictor(nn.Module):
+    def __init__(self, input_size=3, hidden_size=HIDDEN, num_layers=LAYERS, output_size=3):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x):
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size, device=x.device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size, device=x.device)
+        out, _ = self.lstm(x, (h0, c0))
+        return self.fc(out[:, -1, :])
+
+
+def fit_scalers(hist3, leak_full=None):
+    """hist3: (T,3) raw. Returns 3 fitted StandardScalers (cases, deaths, hosp)."""
+    src = leak_full if (LEAK_LIKE_PAPER and leak_full is not None) else hist3
+    scalers = []
+    for c in range(3):
+        s = StandardScaler()
+        s.fit(np.clip(src[:, c], 0, None).reshape(-1, 1))
+        scalers.append(s)
+    return scalers
+
+
+def one_step_forecast(hist3, scalers):
+    """Train a fresh one-step LSTM on hist3 (T,3 raw) and return next-step prediction (3,) raw."""
+    scaled = np.column_stack([
+        scalers[c].transform(np.clip(hist3[:, c], 0, None).reshape(-1, 1)).ravel()
+        for c in range(3)
+    ])                                                  # (T,3) standardized
+    X, Y = [], []
+    for i in range(len(scaled) - WINDOW_SIZE):
+        X.append(scaled[i:i + WINDOW_SIZE, :])
+        Y.append(scaled[i + WINDOW_SIZE, :])
+    X = torch.tensor(np.asarray(X), dtype=torch.float32, device=device)
+    Y = torch.tensor(np.asarray(Y), dtype=torch.float32, device=device)
+
+    model = RNNPredictor().to(device)
+    opt = optim.Adam(model.parameters(), lr=learning_rate)
+    crit = nn.MSELoss()
+    best, best_loss, since = None, np.inf, 0
+    model.train()
+    for ep in range(EPOCHS):
+        opt.zero_grad()
+        loss = crit(model(X), Y)
+        loss.backward()
+        opt.step()
+        lv = float(loss)
+        if PATIENCE is not None:
+            if lv < best_loss - 1e-9:
+                best_loss, since, best = lv, 0, {k: v.clone() for k, v in model.state_dict().items()}
+            else:
+                since += 1
+                if since >= PATIENCE:
+                    break
+    if best is not None:
+        model.load_state_dict(best)
+
+    model.eval()
+    with torch.no_grad():
+        last = torch.tensor(scaled[-WINDOW_SIZE:], dtype=torch.float32, device=device).unsqueeze(0)
+        pred_scaled = model(last).cpu().numpy().ravel()                 # (3,) standardized
+    pred = np.array([scalers[c].inverse_transform([[pred_scaled[c]]])[0, 0] for c in range(3)])
+    return np.clip(pred, 1e-6, None)
+
+
+### rolling forecast
+all_pred  = {s: {} for s in series}
+all_naive = {s: {} for s in series}
+all_obs   = {s: {} for s in series}
+
+full3 = np.column_stack([data["cases"], data["deaths"], data["hosp"]])  # (N,3) raw
+
+for train_end in range(First_train_weeks, N_total_points - Forecast_horizon + 1):
+    origin = train_end - 1
+    hist = full3[:train_end].copy()                    # observed history (origin+1 rows)
+    for h in range(1, Forecast_horizon + 1):
+        fidx = origin + h
+        if fidx >= N_total_points:
+            break
+        scalers = fit_scalers(hist, leak_full=full3)
+        step_pred = one_step_forecast(hist, scalers)   # (3,) raw: cases, deaths, hosp
+        for ci, s in enumerate(SERIES):
+            all_pred[s][(origin, fidx)]  = float(step_pred[ci])
+            all_naive[s][(origin, fidx)] = float(full3[origin, ci])   # persistence
+            all_obs[s][fidx]             = float(full3[fidx, ci])
+        hist = np.vstack([hist, step_pred])            # feed prediction back for next horizon
+    print(f"origin {origin:3d} (train weeks 1-{train_end}) done | "
+          f"1wk cases={all_pred['cases'][(origin, origin+1)]*N_val:,.0f}")
+
+
+### ---- collect / ensemble / MASE / plots (identical to the PINN + MIMO scripts) ----
+ensemble_weights = {1: 0.4, 2: 0.3, 3: 0.2, 4: 0.1}
+
+def collect(series):
+    hres = {h: {"idx": [], "pred": [], "obs": [], "naive": []} for h in range(1, 5)}
+    enum_ = np.zeros(N_total_points); eden = np.zeros(N_total_points)
+    enaive = np.full(N_total_points, np.nan); eobs = np.full(N_total_points, np.nan)
+    for (te, fidx), pv in all_pred[series].items():
+        h = fidx - te
+        hres[h]["idx"].append(fidx); hres[h]["pred"].append(pv)
+        hres[h]["obs"].append(all_obs[series][fidx]); hres[h]["naive"].append(all_naive[series][(te, fidx)])
+        enum_[fidx] += pv * ensemble_weights[h]; eden[fidx] += ensemble_weights[h]
+        eobs[fidx] = all_obs[series][fidx]
+        if h == 1:
+            enaive[fidx] = all_naive[series][(te, fidx)]
+    return hres, enum_, eden, enaive, eobs
+
+def apply_date_axis(ax):
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+    for lbl in ax.get_xticklabels():
+        lbl.set_rotation(45); lbl.set_ha('right')
+
+print("\nRecursive-LSTM MASE by horizon (model MAE / naive MAE; <1 beats naive):")
+fig, axes = plt.subplots(3, 1, figsize=(12, 11), sharex=True)
+for ax, s in zip(axes, SERIES):
+    hres, enum_, eden, enaive, eobs = collect(s)
+    valid = eden > 0
+    ax.plot(study_dates, DATA[s] * N_val, color="#004F94", lw=1.3, label="Observed")
+    ax.plot(study_dates[valid], enum_[valid] * N_val, color="#8c564b", lw=1.8, label="Recursive LSTM ensemble")
+    nv = valid & ~np.isnan(enaive)
+    ax.plot(study_dates[nv], enaive[nv] * N_val, color="orange", lw=1.0, ls="--", label="Naive")
+    ax.set_ylabel(LABEL[s]); ax.legend(fontsize=9, loc="upper right"); apply_date_axis(ax)
+    line = f"  {s:8s}"
+    for h in range(1, 5):
+        p = np.array(hres[h]["pred"]); o = np.array(hres[h]["obs"]); n = np.array(hres[h]["naive"])
+        mase = np.mean(np.abs(p - o)) / (np.mean(np.abs(n - o)) + 1e-12)
+        line += f"  {h}wk={mase:.3f}"
+    print(line)
+axes[0].set_title("England: recursive multivariate LSTM ensemble vs observed")
+plt.tight_layout(); plt.savefig("lstm_recursive_ensemble.png", dpi=150); plt.show()
+
+### per-horizon 2x2 grid for cases
+series, LABEL_STR = "cases", "New cases per week"
+fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharex=True, sharey=True)
+for h, ax in zip(range(1, 5), axes.flatten()):
+    hd, hp, ho, hn = [], [], [], []
+    for (te, fidx), pv in all_pred[series].items():
+        if fidx - te == h:
+            hd.append(study_dates[fidx]); hp.append(pv)
+            ho.append(all_obs[series][fidx]); hn.append(all_naive[series][(te, fidx)])
+    if hd:
+        order = np.argsort(np.array(hd, dtype='datetime64[D]'))
+        hd = np.array(hd, dtype='datetime64[D]')[order]
+        hp = np.array(hp)[order] * N_val; ho = np.array(ho)[order] * N_val; hn = np.array(hn)[order] * N_val
+        ax.plot(hd, ho, color="#004F94", lw=1.5, label="Observed")
+        ax.plot(hd, hp, color="#8c564b", lw=1.5, label=f"LSTM {h}-week")
+        ax.plot(hd, hn, color="orange", lw=1.0, ls="--", label="Naive baseline")
+    ax.set_title(f"{h}-week-ahead forecast"); ax.set_ylabel(LABEL_STR)
+    ax.legend(fontsize=8, loc="upper right"); ax.grid(True, alpha=0.3); apply_date_axis(ax)
+fig.suptitle("Recursive LSTM: Cases (1-4 weeks ahead)", fontsize=14)
+plt.tight_layout(); plt.savefig("lstm_recursive_cases_grid.png", dpi=150); plt.show()
