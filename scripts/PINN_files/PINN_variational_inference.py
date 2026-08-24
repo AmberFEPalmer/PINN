@@ -506,14 +506,29 @@ for s in SERIES:
         wis_h = np.mean([wis(all_obs[s][k[1]], quantile_store[s][k]) for k in hkeys]) * N_val
         sd_epi = np.mean([ens_sd_epi[s][k] for k in hkeys]) * N_val
         sd_alea = np.mean([ens_sd_alea[s][k] for k in hkeys]) * N_val
+        ### mean credible-interval width, in counts - the sharpness half of the
+        ### calibration/sharpness pair, so coverage can be read against interval size
+        def mean_width(lo_q, hi_q):
+            return float(np.mean([quantile_store[s][k][hi_q] - quantile_store[s][k][lo_q]
+                                 for k in hkeys])) * N_val
+        w50 = mean_width(0.25, 0.75)
+        w90 = mean_width(0.1, 0.9)
+        w95 = mean_width(0.025, 0.975)
+        ### widths relative to the mean observation, so series are comparable
+        obs_mean = float(np.mean(obs)) * N_val + 1e-12
         rows.append({
             "series": s, "horizon": h, "n_forecasts": len(hkeys),
             "mase_posterior_mean": mase_mean, "mase_posterior_median": mase_median,
             "coverage_50": cov50, "coverage_90": cov90, "coverage_95": cov95,
             "wis": wis_h, "mean_sd_epistemic": sd_epi, "mean_sd_aleatoric": sd_alea,
+            "width_50": w50, "width_90": w90, "width_95": w95,
+            "rel_width_50": w50 / obs_mean, "rel_width_90": w90 / obs_mean,
+            "rel_width_95": w95 / obs_mean, "mean_obs": obs_mean,
         })
         print(f"  {s:7s} h={h} | MASE mean={mase_mean:.3f} median={mase_median:.3f} "
-              f"| cov50={cov50:.2f} cov90={cov90:.2f} cov95={cov95:.2f} | WIS={wis_h:.3e}")
+              f"| cov50={cov50:.2f} cov90={cov90:.2f} cov95={cov95:.2f} "
+              f"| width50={w50:.3e} width90={w90:.3e} ({w90 / obs_mean:.2f}x mean obs) "
+              f"| WIS={wis_h:.3e}")
 
 metrics = pd.DataFrame(rows)
 metrics.to_csv("variational_pinn_metrics.csv", index=False)
