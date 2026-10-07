@@ -204,41 +204,6 @@ print(f"\ncommon scored set: {len(common)} forecasts per series "
 metrics = pd.concat([evaluate(qs, tag, restrict=common) for tag, (qs, _) in variants.items()],
                     ignore_index=True)
 
-try:
-    with open("../../forecasts/PINN_variational.pkl", "rb") as f:
-        vi = pickle.load(f)
-    vq = vi["quantiles"]
-    vi_rows = []
-    for s in SERIES:
-        for h in range(1, Forecast_horizon + 1):
-            hk = [k for k in common if k[1] - k[0] == h and k in vq[s]]
-            if not hk:
-                continue
-            obs = np.array([all_obs[s][k[1]] for k in hk])
-            naive = np.array([all_naive[s][k] for k in hk])
-            mae_naive = np.mean(np.abs(naive - obs)) + 1e-12
-            mu = np.array([vi["all_pred"][s][k] for k in hk])
-            med = np.array([vq[s][k][0.5] for k in hk])
-            w = {lvl: np.mean([vq[s][k][qh] - vq[s][k][ql] for k in hk]) * N_val
-                 for lvl, (ql, qh) in LEVELS.items()}
-            cov = {lvl: np.mean([vq[s][k][ql] <= all_obs[s][k[1]] <= vq[s][k][qh] for k in hk])
-                   for lvl, (ql, qh) in LEVELS.items()}
-            obs_mean = float(obs.mean()) * N_val
-            vi_rows.append({
-                "method": f"B-PINN VI (KL={vi['config']['kl_max']})", "series": s, "horizon": h,
-                "n_forecasts": len(hk),
-                "mase_point": np.mean(np.abs(mu - obs)) / mae_naive,
-                "mase_biascorr": np.mean(np.abs(med - obs)) / mae_naive,
-                "coverage_50": cov[0.5], "coverage_90": cov[0.9], "coverage_95": cov[0.95],
-                "width_50": w[0.5], "width_90": w[0.9], "width_95": w[0.95],
-                "rel_width_50": w[0.5] / obs_mean, "rel_width_90": w[0.9] / obs_mean,
-                "rel_width_95": w[0.95] / obs_mean, "mean_obs": obs_mean,
-                "wis": np.mean([wis(all_obs[s][k[1]], vq[s][k]) for k in hk]) * N_val,
-            })
-    metrics = pd.concat([metrics, pd.DataFrame(vi_rows)], ignore_index=True)
-except FileNotFoundError:
-    print("PINN_variational.pkl not found - skipping the B-PINN comparison")
-
 metrics.to_csv("conformal_pinn_metrics.csv", index=False)
 
 pd.set_option("display.width", 250)
@@ -296,7 +261,7 @@ for ax, lvl in zip(axes, [0.5, 0.9, 0.95]):
     ax.set_xticks(x); ax.set_xticklabels([f"{h}wk" for h in range(1, Forecast_horizon + 1)])
     ax.set_title(f"{int(lvl * 100)}% interval"); ax.set_xlabel("Horizon"); ax.set_ylim(0, 1.05)
 axes[0].set_ylabel("Empirical coverage"); axes[0].legend(fontsize=8, loc="lower left")
-fig.suptitle("Coverage: conformal variants vs the variational B-PINN "
+fig.suptitle("Coverage of the conformal variants "
              "(dashed = nominal, averaged over series)", fontsize=14)
 plt.tight_layout(); plt.savefig("conformal_pinn_coverage.png", dpi=150); plt.show()
 
