@@ -102,8 +102,14 @@ def build(kind="scaled", adaptive=False):
     alpha_t = {(s, h, lvl): 1 - lvl for s in SERIES for h in range(1, Forecast_horizon + 1)
                for lvl in LEVELS}
     alpha_trace = {k: [] for k in alpha_t}
+    pending = []              ### ACI misses waiting for their target week to be observed
     ### chronological sweep so ACI only ever sees the past
     for t in ORIGINS:
+        ### y[t+h] is only known once the origin reaches t+h, so apply each miss then
+        ready = [p for p in pending if p[0] <= t]
+        pending = [p for p in pending if p[0] > t]
+        for _, akey, err in ready:
+            alpha_t[akey] += GAMMA_ACI * ((1 - akey[2]) - err)
         for h in range(1, Forecast_horizon + 1):
             key = (t, t + h)
             if key not in all_pred[SERIES[0]]:
@@ -130,7 +136,7 @@ def build(kind="scaled", adaptive=False):
                     for lvl, (ql, qh) in LEVELS.items():
                         y = all_obs[s][t + h]
                         err = 0.0 if row[ql] <= y <= row[qh] else 1.0
-                        alpha_t[(s, h, lvl)] += GAMMA_ACI * ((1 - lvl) - err)
+                        pending.append((t + h, (s, h, lvl), err))
     return qs, used, alpha_trace
 
 ### weighted interval score 
