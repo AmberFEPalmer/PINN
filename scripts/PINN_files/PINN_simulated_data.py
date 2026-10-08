@@ -1,469 +1,341 @@
+import argparse
+import os
 import numpy as np
+import pandas as pd
+import scipy.optimize
 import matplotlib.pyplot as plt
 import tensorflow as tf
-import random
 from tensorflow.keras.layers import Dense, Input, Lambda
 from tensorflow.keras.models import Model
-from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import regularizers
-import pandas as pd
-import os
 
-### Plot style — fixed across all scripts 
-plt.rcParams.update({
-    'font.family': 'sans-serif',
-    'font.size': 12,
-    'axes.labelsize': 13,
-    'axes.titlesize': 14,
-    'legend.fontsize': 11,
-    'xtick.labelsize': 11,
-    'ytick.labelsize': 11,
-    'lines.linewidth': 2,
-    'axes.grid': True,
-    'grid.alpha': 0.3,
-})
+### SEIR-PINN for synthetic data - infers beta(t) from observed I(t), sigma and gamma provided
+### (PINN_all_learnable_parameters.py learns sigma and gamma too)
 
-data_folder = os.path.join("..", "..", "data")
-output_dir = "../../png_files"
+### Data loss on log scale -> early outbreak is not ignored
+### ODE residual measured relative to each compartment's size -> physics enforced across the whole epidemic
+### Initial conditions and S + E + I + R = 1 built into the outputs 
+### ADAM + L-BFGS 
 
-### Accumulate metrics across all scenarios
-all_metrics = []
+N_VAL = 100001
+N = tf.constant(float(N_VAL), dtype=tf.float32)
+SIGMA, GAMMA = 0.25, 0.25                 ### used when sigma and gamma are provided, not learned
+T_DAYS = 100.0                             ### t is normalised to [0, 1] over 100 days
+N_COL = 1000                               ### collocation points on [0, 1]
+MAX_POINTS = 101
+I0_FIXED = 1.0 / N_VAL                     ### one infected person at t = 0
+LOG_EPS = 0.1 / N_VAL                      ### a tenth of a person, keeps log(I) finite
 
-### Define scenarios to run
-scenarios = [
-    ### Constant-beta scenarios
-    {"label": "beta_0.75", "csv": "SEIR_data_beta_0.75.csv", "beta_true": 0.75},
-    {"label": "beta_0.5", "csv": "SEIR_data_beta_0.5.csv", "beta_true": 0.5},
-    {"label": "beta_0.4", "csv": "SEIR_data_beta_0.4.csv", "beta_true": 0.4},
-    ### Original time-varying beta scenarios
-    {"label": "beta_piecewise", "csv": "SEIR_beta_peicewise.csv", "beta_true": None},
-    {"label": "beta_spline", "csv": "SEIR_beta_spline.csv", "beta_true": None},
-    {"label": "beta_exp_decay", "csv": "SEIR_beta_exponential_decay_results.csv", "beta_true": None},
-    ### Easy spline scenarios
-    {"label": "beta_spline_slow_rise", "csv": "beta_spline_slow_rise.csv", "beta_true": None},
-    {"label": "beta_spline_gradual_decline", "csv": "beta_spline_gradual_decline.csv", "beta_true": None},
-    {"label": "beta_spline_single_pulse", "csv": "beta_spline_single_pulse.csv", "beta_true": None},
-    ### Medium spline scenarios
-    {"label": "beta_spline_two_waves", "csv": "beta_spline_two_waves.csv", "beta_true": None},
-    {"label": "beta_spline_three_waves", "csv": "beta_spline_three_waves.csv", "beta_true": None},
-    ### Hard spline scenarios
-    {"label": "beta_spline_rapid", "csv": "beta_spline_rapid.csv", "beta_true": None},
-    {"label": "beta_spline_very_rapid", "csv": "beta_spline_very_rapid.csv", "beta_true": None},
-    {"label": "beta_spline_escalating", "csv": "beta_spline_escalating.csv", "beta_true": None},
-    {"label": "beta_spline_damped", "csv": "beta_spline_damped.csv", "beta_true": None},
-]
+def create_pinn_model():
+    """Outputs satisfy the initial conditions and conservation exactly:
+        log I(t) = log I0 + t * a(t)                   I(0) = I0, and I is represented on a log scale
+        E(t) = t * exp(b(t)),  R(t) = t * exp(c(t))     E(0) = R(0) = 0, both always positive
+        S(t) = 1 - E - I - R                            S + E + I + R = 1
 
-### Gaussian noise scenarios (1% – 20%), beta_true = 0.75
-for noise_percent in range(1, 21):
-    scenarios.append({
-        "label": f"Gaussian_noise_{noise_percent}percent",
-        "csv": f"SEIR_Gaussian_noise_{noise_percent}percent.csv",
-        "beta_true": 0.75,
-    })
+    The b and c output biases start at log(1/N) so E and R begin at the scale of a few people.
+    beta(t) comes from a separate sub-network with a softplus output, so it stays positive."""
 
-### Compute and report error metrics
-def compute_metrics(pred, true, name, label, compartment):
-    pred = np.array(pred).flatten()
-    true = np.array(true).flatten()
+    t_input = Input(shape=(1,), name='time_input')
 
-    mae  = np.mean(np.abs(pred - true))
-    rmse = np.sqrt(np.mean((pred - true) ** 2))
+    seir = Dense(50, activation='tanh')(t_input)
+    seir = Dense(50, activation='tanh')(seir)
+    seir = Dense(50, activation='tanh')(seir)
 
-    mean_true = np.mean(true)
-    peak_true = np.max(true)
-    mae_pct = 100 * mae  / (mean_true + 1e-8)
-    rmse_pct = 100 * rmse / (mean_true + 1e-8)
-    peak_mae_pct = 100 * mae  / (peak_true + 1e-8)
+    a = Dense(1, name='log_growth_I')(seir)
+    b = Dense(1, bias_initializer=tf.keras.initializers.Constant(np.log(1.0 / N_VAL)), name='log_E')(seir)
+    c = Dense(1, bias_initializer=tf.keras.initializers.Constant(np.log(1.0 / N_VAL)), name='log_R')(seir)
 
-    print(f"{name}:")
-    print(f"MAE = {mae:.4f} ({mae_pct:.3f}%)")
-    print(f"RMSE = {rmse:.4f} ({rmse_pct:.3f}%)")
-    print(f"Peak-normalised MAE = {peak_mae_pct:.3f}%\n")
+    I = Lambda(lambda z: tf.exp(np.log(I0_FIXED) + z[0] * z[1]), name='I')([t_input, a])
+    E = Lambda(lambda z: z[0] * tf.exp(z[1]), name='E')([t_input, b])
+    R = Lambda(lambda z: z[0] * tf.exp(z[1]), name='R')([t_input, c])
+    S = Lambda(lambda z: 1.0 - z[0] - z[1] - z[2], name='S')([E, I, R])
 
-    return {
-        "scenario": label,
-        "compartment": compartment,
-        "MAE": mae,
-        "RMSE": rmse,
-        "MAE_pct": mae_pct,
-        "RMSE_pct": rmse_pct,
-        "peak_MAE_pct": peak_mae_pct,
-    }
+    beta_h = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(t_input)
+    beta_h = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_h)
+    beta_h = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_h)
 
-### Total population
-N_val = 100001
-N = tf.constant(float(N_val), dtype=tf.float32)
+    beta = Dense(1, activation='softplus', name='beta')(beta_h)
 
-### Scenario loop
-for scenario in scenarios:
-    label = scenario["label"]
-    csv_file = scenario["csv"]
-    beta_true = scenario["beta_true"]   # None for time-varying scenarios
+    return Model(inputs=t_input, outputs=[S, E, I, R, beta])
 
-    print(f"\n{'='*50}")
-    print(f"Running PINN for scenario: {label}")
-    print(f"{'='*50}")
 
-    data_path = os.path.join(data_folder, csv_file)
-    data = pd.read_csv(data_path)
+def loss_function(t_col, t_data, I_data, net, sigma=SIGMA, gamma=GAMMA, beta_const=None):
+    """data: MSE on log(I + eps)
+    ODE:  each compartment's residual divided by T * (compartment count + 1 person), i.e. a relative
+          rate error, summed over S, E, I, R
+    beta_const: if given, one learnable constant replaces the beta network"""
+    with tf.GradientTape(persistent=True) as tape:
+        tape.watch(t_col)
+        S, E, I, R, beta = net(t_col)
+    if beta_const is not None:
+        beta = beta_const * tf.ones_like(beta)
+    dS_dt = tape.gradient(S, t_col); dE_dt = tape.gradient(E, t_col)
+    dI_dt = tape.gradient(I, t_col); dR_dt = tape.gradient(R, t_col)
+    del tape
 
-    t_data = data["time"].values.reshape(-1, 1)
-    I_data = data["I"].values.reshape(-1, 1)
+    S_abs, E_abs, I_abs, R_abs = S * N, E * N, I * N, R * N
 
-    ### Train/test split
-    N_obs = len(I_data)
-    t_data = t_data[:N_obs].reshape(-1, 1)
-    I_data = I_data.reshape(-1, 1)
+    dS_phys = T_DAYS * (-beta * S_abs * I_abs / N)
+    dE_phys = T_DAYS * (beta * S_abs * I_abs / N - sigma * E_abs)
+    dI_phys = T_DAYS * (sigma * E_abs - gamma * I_abs)
+    dR_phys = T_DAYS * (gamma * I_abs)
 
-    split = int(1.0 * N_obs)
-    t_train = t_data[:split];  I_train = I_data[:split]
-    t_test = t_data[split:];  I_test  = I_data[split:]
+    rel = lambda d, phys, X_abs: tf.square((d * N - phys) / (T_DAYS * (X_abs + 1.0)))
 
-    I_scale = tf.constant(float(I_train.max()), dtype=tf.float32)
+    ode_loss = (tf.reduce_mean(rel(dS_dt, dS_phys, S_abs)) + tf.reduce_mean(rel(dE_dt, dE_phys, E_abs)) +
+                tf.reduce_mean(rel(dI_dt, dI_phys, I_abs)) + tf.reduce_mean(rel(dR_dt, dR_phys, R_abs)))
 
-    t_train_tensor = tf.convert_to_tensor(t_train, dtype=tf.float32)
-    I_train_tensor = tf.convert_to_tensor(I_train, dtype=tf.float32)
+    _, _, I_pred, _, _ = net(t_data)
+    data_loss = tf.reduce_mean(tf.square(tf.math.log(I_pred + LOG_EPS) - tf.math.log(I_data + LOG_EPS)))
 
-    ### Define PINN
-    def create_pinn_model():
-        t_input = Input(shape=(1,), name='time_input')
+    total = data_loss + ode_loss
+    return total, {"data_loss": data_loss, "ODE_loss": ode_loss}
 
-        ### SEIR —> 3 hidden layers, 50 neurons, tanh activation
-        seir = Dense(50, activation='tanh')(t_input)
-        seir = Dense(50, activation='tanh')(seir)
-        seir = Dense(50, activation='tanh')(seir)
 
-        ### SEIR compartment outputs (softplus keeps values non-negative)
-        S = Dense(1, activation='softplus', kernel_regularizer=regularizers.l2(1e-5), name='S')(seir)
-        E = Dense(1, activation='softplus', kernel_regularizer=regularizers.l2(1e-5), name='E')(seir)
-        I = Dense(1, activation='softplus', kernel_regularizer=regularizers.l2(1e-5), name='I')(seir)
-        R = Dense(1, activation='softplus', kernel_regularizer=regularizers.l2(1e-5), name='R')(seir)
+class Fitter:
+    def __init__(self, lr=1e-3, learn_sg=False, sg_init=0.5, beta_const=False, beta_init=1.0):
+        """learn_sg: sigma and gamma become two learnable constants (on a log scale, so they stay
+        positive), started at sg_init; otherwise they are fixed at SIGMA, GAMMA.
+        beta_const: beta is one learnable constant (started at beta_init) instead of a network of time."""
+        self.learn_sg, self.sg_init = learn_sg, sg_init
+        self.beta_const, self.beta_init = beta_const, beta_init
+        self.log_sg = tf.Variable(np.log([sg_init, sg_init]).astype(np.float32), name="log_sigma_gamma")
+        self.log_beta = tf.Variable(np.float32(np.log(beta_init)), name="log_beta_const")
+        self.model = create_pinn_model()
+        self.t = tf.Variable(tf.zeros((MAX_POINTS, 1)))
+        self.y = tf.Variable(tf.zeros((MAX_POINTS, 1)))
+        self.n = tf.Variable(1, dtype=tf.int32)
+        self.opt = tf.keras.optimizers.legacy.Adam(learning_rate=lr)
+        self.opt._create_all_weights(self.train_vars())
+        self.t_col = tf.constant(np.linspace(0, 1, N_COL).reshape(-1, 1), dtype=tf.float32)
 
-        ### Separate beta sub-network —> 3 hidden layers, 50 neurons, tanh
-        beta_h = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5),)(t_input)
-        beta_h = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_h)
-        beta_h = Dense(50, activation='tanh', kernel_regularizer=regularizers.l2(1e-5))(beta_h)
+    ### task and parameters 
+    def set_task(self, t, I):
+        """Train on the observations given (e.g. all 101 days, or days up to a forecast origin)"""
+        n = len(t); pad = MAX_POINTS - n
+        self.t.assign(np.pad(np.asarray(t, np.float32).reshape(-1, 1), ((0, pad), (0, 0))))
+        self.y.assign(np.pad(np.asarray(I, np.float32).reshape(-1, 1), ((0, pad), (0, 0))))
+        self.n.assign(n)
 
-        ### beta has to have softplus activation to be identifiable
-        beta   = Dense(1, activation='softplus', name='beta')(beta_h)
+    def train_vars(self):
+        return (self.model.trainable_variables + ([self.log_sg] if self.learn_sg else []) +
+                ([self.log_beta] if self.beta_const else []))
 
-        return Model(inputs=t_input, outputs=[S, E, I, R, beta])
+    def sg(self):
+        if self.learn_sg:
+            return tf.exp(self.log_sg[0]), tf.exp(self.log_sg[1])
+        return tf.constant(SIGMA), tf.constant(GAMMA)
 
-    ### Fresh model for each scenario
-    tf.keras.backend.clear_session()
-    model = create_pinn_model()
-    model.summary()
+    def bconst(self):
+        return tf.exp(self.log_beta) if self.beta_const else None
 
-    ### Define initial conditions – derived from N so population is explicit
-    I0 = tf.constant(1.0, dtype=tf.float32)
-    E0 = tf.constant(0.0, dtype=tf.float32)
-    R0 = tf.constant(0.0, dtype=tf.float32)
+    def get_state(self):
+        """Everything that is learned: network weights and the scalar parameters."""
+        return (self.model.get_weights(), self.log_sg.numpy().copy(), self.log_beta.numpy().copy())
 
-    S0_fixed = (N - I0 - E0 - R0) / N
-    E0_fixed = E0 / N
-    I0_fixed = I0 / N
-    R0_fixed = R0 / N
+    def set_state(self, state):
+        self.model.set_weights(state[0]); self.log_sg.assign(state[1]); self.log_beta.assign(state[2])
 
-    ### Loss function
-    def loss_function(t_col, t_data_loss, I_data_loss, net, I_scale):
+    def reset(self, weights):
+        """Start a new fit from network weights `weights`, scalar parameters at their initial guesses
+        and a fresh optimiser."""
+        self.model.set_weights(weights)
+        self.log_sg.assign(np.log([self.sg_init, self.sg_init]).astype(np.float32))
+        self.log_beta.assign(np.float32(np.log(self.beta_init)))
+        self.reset_optimiser()
 
-        ### if t_col is a 1D array it is reshaped to a column vector
-        if len(t_col.shape) == 1:
-            t_col = tf.reshape(t_col, (-1, 1))
+    def reset_optimiser(self):
+        for v in self.opt.variables():
+            v.assign(tf.zeros_like(v))
 
-        ### Convert data to tensors
-        if not isinstance(t_data_loss, tf.Tensor):
-            t_data_loss = tf.convert_to_tensor(t_data_loss, dtype=tf.float32)
-        if not isinstance(I_data_loss, tf.Tensor):
-            I_data_loss = tf.convert_to_tensor(I_data_loss, dtype=tf.float32)
-
-        ### Reshape arrays to column vectors
-        if len(t_data_loss.shape) == 1:
-            t_data_loss = tf.reshape(t_data_loss, (-1, 1))
-        if len(I_data_loss.shape) == 1:
-            I_data_loss = tf.reshape(I_data_loss, (-1, 1))
-
-        ### Gradient tape for automatic differentiation
-        with tf.GradientTape(persistent=True) as tape:
-            tape.watch(t_col)
-            S, E, I, R, beta = net(t_col)
-
-        ### Define parameters which don't vary over time
-        sigma = tf.constant(0.25, dtype=tf.float32)
-        gamma = tf.constant(0.25, dtype=tf.float32)
-
-        ### Compute derivatives e.g. dS/dt
-        dS_dt = tape.gradient(S, t_col)
-        dE_dt = tape.gradient(E, t_col)
-        dI_dt = tape.gradient(I, t_col)
-        dR_dt = tape.gradient(R, t_col)
-
-        del tape
-
-        ### Time scaling factor (100 days normalised to [0,1])
-        T = tf.constant(100.0, dtype=tf.float32)
-
-        ### Convert fractional outputs to absolute counts
-        S_abs = S * N
-        E_abs = E * N
-        I_abs = I * N
-        R_abs = R * N
-
-        ### SEIR equations in absolute counts
-        dS_dt_physics = T * (-beta * S_abs * I_abs / N)
-        dE_dt_physics = T * ( beta * S_abs * I_abs / N - sigma * E_abs)
-        dI_dt_physics = T * ( sigma * E_abs - gamma * I_abs)
-        dR_dt_physics = T * ( gamma * I_abs)
-
-        ### ODE loss in absolute counts
-        ODE_loss = (
-            tf.reduce_mean(tf.square((dS_dt * N) - dS_dt_physics)) +
-            tf.reduce_mean(tf.square((dE_dt * N) - dE_dt_physics)) +
-            tf.reduce_mean(tf.square((dI_dt * N) - dI_dt_physics)) +
-            tf.reduce_mean(tf.square((dR_dt * N) - dR_dt_physics))
-        )
-
-        ### Initial condition loss (evaluate at t=0)
-        t_zero = tf.constant([[0.0]], dtype=tf.float32)
-        S_0, E_0, I_0, R_0, _ = net(t_zero)
-        Initial_condition_loss = tf.reduce_mean(
-            tf.square(S_0 - S0_fixed) +
-            tf.square(E_0 - E0_fixed) +
-            tf.square(I_0 - I0_fixed) +
-            tf.square(R_0 - R0_fixed)
-        )
-
-        ### Conservation loss in absolute counts
-        conservation_loss = tf.reduce_mean(tf.square(S_abs + E_abs + I_abs + R_abs - N))
-
-        ### Data loss
-        _, _, I_pred, _, _ = net(t_data_loss)
-        data_loss = tf.reduce_mean(tf.square((I_pred - I_data_loss) / I_scale))
-
-        N_sq = N * N
-
-        total_loss = (
-            1.0 * data_loss +
-            0.1 * (ODE_loss / N_sq) +
-            1.0 * Initial_condition_loss +
-            1.0 * (conservation_loss / N_sq)
-        )
-
-        return total_loss, {
-            "data_loss": data_loss,
-            "IC_loss": Initial_condition_loss,
-            "conservation_loss": conservation_loss,
-            "ODE_loss": ODE_loss,
-        }
-
-    ### Optimiser and collocation points
-    optm = tf.keras.optimizers.legacy.Adam(learning_rate=0.001)
-
-    ### Collocation points for physics
-    n_collocation = 1000
-    t_col_tensor = tf.convert_to_tensor(
-        np.linspace(0, 1, n_collocation).reshape(-1, 1), dtype=tf.float32
-    )
-
-    ### Ensure all inputs are float32 for training
-    t_train = tf.convert_to_tensor(t_train, dtype=tf.float32)
-    I_train = tf.convert_to_tensor(I_train, dtype=tf.float32)
-    t_test = tf.convert_to_tensor(t_test, dtype=tf.float32)
-    I_test = tf.convert_to_tensor(I_test, dtype=tf.float32)
-
-    ### Training loop
+    ### training 
     @tf.function
-    def train_step(t_col, t_data, I_data):
+    def step(self):
+        n = self.n
         with tf.GradientTape() as tape:
-            total_loss, loss_dict = loss_function(t_col, t_data, I_data, model, I_scale)
-        grads = tape.gradient(total_loss, model.trainable_variables)
-        optm.apply_gradients(zip(grads, model.trainable_variables))
-        return total_loss, loss_dict
+            sigma, gamma = self.sg()
+            loss, ld = loss_function(self.t_col, self.t[:n], self.y[:n], self.model, sigma, gamma, self.bconst())
+        grads = tape.gradient(loss, self.train_vars())
+        grads = [g if g is not None else tf.zeros_like(v) for g, v in zip(grads, self.train_vars())]
+        self.opt.apply_gradients(zip(grads, self.train_vars()))
+        return loss, ld
 
-    @tf.function
-    def test_step(t_col, t_data, I_data):
-        return loss_function(t_col, t_data, I_data, model, I_scale)
+    def run(self, n_steps):
+        for _ in range(n_steps):
+            loss, ld = self.step()
+        return float(loss)
 
-    train_loss_record = []
-    test_loss_record  = []
+    def run_keep_best(self, n_steps, best=None, check_every=1000):
+        """Adam steps, checking the loss every check_every steps and keeping the best state seen.
+        best = (loss, state) or None."""
+        done = 0
+        while done < n_steps:
+            k = min(check_every, n_steps - done)
+            loss = self.run(k); done += k
+            if best is None or loss < best[0]:
+                best = (loss, self.get_state())
+        return best
 
-    print("Starting training...")
-    for itr in range(50000):
-        train_loss, train_loss_dict = train_step(t_col_tensor, t_train, I_train)
-        train_loss_record.append(float(train_loss))
+    def lbfgs(self, maxiter=5000):
+        """Polish the current state with L-BFGS (scipy). Reverts if it does not lower the loss.
+        Returns (loss before, loss after)."""
+        vs = self.train_vars()
+        shapes = [v.shape for v in vs]; sizes = [int(np.prod(sh)) for sh in shapes]
+        if not hasattr(self, "_vg"):
+            @tf.function
+            def vg(flat):
+                i = 0
+                for v, sh, k in zip(vs, shapes, sizes):
+                    v.assign(tf.reshape(flat[i:i + k], sh)); i += k
+                n = self.n
+                with tf.GradientTape() as tape:
+                    sigma, gamma = self.sg()
+                    loss, _ = loss_function(self.t_col, self.t[:n], self.y[:n], self.model,
+                                            sigma, gamma, self.bconst())
+                g = tape.gradient(loss, vs)
+                g = [x if x is not None else tf.zeros_like(v) for x, v in zip(g, vs)]
+                return loss, tf.concat([tf.reshape(x, [-1]) for x in g], 0)
+            self._vg = vg
 
-        test_loss, test_loss_dict = test_step(t_col_tensor, t_test, I_test)
-        test_loss_record.append(float(test_loss))
+        def f(x):
+            loss, g = self._vg(tf.constant(x, tf.float32))
+            return float(loss), g.numpy().astype(np.float64)
 
-        N_sq = N * N
+        before_state = self.get_state()
+        x0 = np.concatenate([v.numpy().ravel() for v in vs]).astype(np.float64)
+        before = f(x0)[0]
+        res = scipy.optimize.minimize(f, x0, jac=True, method="L-BFGS-B",
+                                      options={"maxiter": maxiter, "maxfun": 2 * maxiter,
+                                               "ftol": 1e-15, "gtol": 1e-12})
+        after = f(res.x)[0]                       ### also leaves the variables at res.x
+        if not np.isfinite(after) or after > before:
+            self.set_state(before_state); after = before
+        return before, after
 
-        if itr % 1000 == 0:
-            print(
-                f"Iteration {itr} | "
-                f"Train: {float(train_loss):.6f}  Test: {float(test_loss):.6f} | "
-                f"Data: {float(train_loss_dict['data_loss']):.6f}  "
-                f"IC: {float(train_loss_dict['IC_loss']):.6f}  "
-                f"Conservation: {float(train_loss_dict['conservation_loss'] / N_sq):.6f}  "
-                f"ODE: {float(train_loss_dict['ODE_loss'] / N_sq):.6f}"
-            )
+    def fit(self, adam_steps=50_000, lbfgs_iters=5000):
+        """Full fit from the current state: Adam keeping the best state, then L-BFGS. Returns the loss."""
+        best = self.run_keep_best(adam_steps)
+        self.set_state(best[1])
+        if lbfgs_iters:
+            _, loss = self.lbfgs(lbfgs_iters)
+            return loss
+        return best[0]
 
-    ### Predictions for plotting
-    t_tensor = tf.convert_to_tensor(t_data, dtype=tf.float32)
-    S_pred, E_pred, I_pred, R_pred, beta_pred_full = model(t_tensor, training=False)
+    ### outputs
+    def predict(self, t):
+        S, E, I, R, beta = self.model(tf.constant(np.asarray(t, np.float32).reshape(-1, 1)))
+        sigma, gamma = self.sg()
+        if self.beta_const:
+            beta = float(tf.exp(self.log_beta)) * tf.ones_like(beta)
+        return {"S": S.numpy().ravel(), "E": E.numpy().ravel(), "I": I.numpy().ravel(),
+                "R": R.numpy().ravel(), "beta": beta.numpy().ravel(),
+                "sigma": float(sigma), "gamma": float(gamma)}
 
-    def to_numpy_flat(arr):
-        return arr.numpy().flatten() if hasattr(arr, 'numpy') else arr.flatten()
 
-    t_data_np = to_numpy_flat(t_data)
-    t_train_np = to_numpy_flat(t_train)
-    t_test_np  = to_numpy_flat(t_test)
+### running the synthetic scenarios
+DEFAULT_SCENARIOS = (["beta_0.75", "beta_0.5", "beta_0.4"] +
+                     ["beta_spline", "beta_spline_slow_rise", "beta_spline_gradual_decline",
+                      "beta_spline_single_pulse", "beta_spline_two_waves", "beta_spline_three_waves",
+                      "beta_spline_rapid", "beta_spline_very_rapid", "beta_spline_escalating",
+                      "beta_spline_damped"] +
+                     ["ood_piecewise", "ood_exp_decay", "noise_5", "noise_10", "noise_15", "noise_20"])
 
-    ### Un-normalise time (days) and counts
-    days_total = 100
+COLOURS = {"S": "#2ca02c", "E": "#ff7f0e", "I": "#d62728", "R": "#1f33b4"}
 
-    t_data_unnorm = t_data_np  * days_total
-    t_train_unnorm = t_train_np * days_total
-    t_test_unnorm  = t_test_np  * days_total
 
-    S_pred_unnorm = to_numpy_flat(S_pred) * N_val
-    E_pred_unnorm = to_numpy_flat(E_pred) * N_val
-    I_pred_unnorm = to_numpy_flat(I_pred) * N_val
-    R_pred_unnorm = to_numpy_flat(R_pred) * N_val
+def report_label(label):
+    """Scenario names as used in panel_figures.py: noise scenarios are Gaussian_noise_{p}percent."""
+    return f"Gaussian_noise_{label.split('_')[1]}percent" if label.startswith("noise_") else label
 
-    I_train_unnorm = to_numpy_flat(I_train) * N_val
-    I_test_unnorm  = to_numpy_flat(I_test)  * N_val
 
-    ### Plotting
-    COLOURS = {
-        "S": "#2ca02c",
-        "E": "#ff7f0e",
-        "I": "#d62728",
-        "R": "#1f33b4",
-    }
+def split_suffix(split, learn_sg):
+    """File suffix used in panel_figures.py: 80_20 for an 80/20 split; all 100 days is 100_10 with sigma
+    and gamma provided and 100_0 with them learned."""
+    if abs(split - 0.8) < 1e-9:
+        return "80_20"
+    if abs(split - 1.0) < 1e-9:
+        return "100_0" if learn_sg else "100_10"
+    return f"{round(100 * split)}_{round(100 * (1 - split))}"
 
-    ### Training loss
-    plt.figure(figsize=(10, 8))
-    plt.plot(train_loss_record, label='Train loss')
-    plt.plot(test_loss_record,  label='Test loss')
-    plt.xlabel('Iteration')
-    plt.ylabel('Loss')
-    plt.yscale('log')
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_training_loss_{label}_100_10.png'))
-    plt.close()
 
-    ### PINN prediction vs observed
-    plt.figure(figsize=(14, 6))
-    plt.plot(t_data_unnorm,  I_pred_unnorm,  color="#444444", linewidth=2, linestyle='-', label='Infected - PINN prediction')
-    plt.scatter(t_train_unnorm, I_train_unnorm, color=COLOURS["I"], s=10, alpha=0.5, zorder=3, label='Infected - data')
-    plt.scatter(t_test_unnorm,  I_test_unnorm,  color=COLOURS["I"], s=10, alpha=0.5, zorder=3)
-    plt.axvline(x=t_train_unnorm[-1], color='gray', linestyle='--', label='Train/Test Split')
-    plt.xlabel('Days')
-    plt.ylabel('Number of infected individuals')
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_beta_{label}_100_10.png'))
-    plt.close()
+def run_scenarios(scenarios, split=1.0, seeds=1, adam_steps=50_000, lbfgs_iters=5000,
+                  learn_sg=False, beta_const=False, prefix="PINN", pred_prefix="PINN",
+                  data_folder="../../data", output_dir="../../png_files"):
+    """Fit each scenario, save I(t), beta(t) and S/E/R plots, predictions and a metrics table."""
+    import synthetic_scenarios as sc
+    plt.rcParams.update({'font.family': 'sans-serif', 'font.size': 12, 'axes.labelsize': 13,
+                         'axes.titlesize': 14, 'legend.fontsize': 11, 'lines.linewidth': 2,
+                         'axes.grid': True, 'grid.alpha': 0.3})
+    os.makedirs(output_dir, exist_ok=True)
+    fit = Fitter(learn_sg=learn_sg, beta_const=beta_const)
+    suffix = split_suffix(split, learn_sg)
+    metrics = []
+    for label in scenarios:
+        task = sc.load_task(label, data_folder)
+        t_days = task["t"] * T_DAYS
+        n_train = int(round(split * len(task["t"])))
+        for seed in range(seeds):
+            tag = report_label(label) if seeds == 1 else f"{report_label(label)}_seed{seed}"
+            print(f"\n{'=' * 50}\nRunning PINN for scenario: {tag}\n{'=' * 50}", flush=True)
+            fit.set_task(task["t"][:n_train], task["I"][:n_train])
+            tf.random.set_seed(seed)
+            fit.reset(create_pinn_model().get_weights())
+            loss = fit.fit(adam_steps, lbfgs_iters)
+            out = fit.predict(task["t"])
 
-    ### Estimated beta
-    t_plot = np.linspace(0.0, 1.0, 500).reshape(-1, 1)
-    t_plot_tensor = tf.convert_to_tensor(t_plot, dtype=tf.float32)
-    _, _, _, _, beta_pred = model.predict(t_plot_tensor)
-    t_plot_unnorm = t_plot.flatten() * days_total
+            ape = np.abs(out["beta"] - task["beta"]) / task["beta"]
+            row = {"scenario": tag, "loss": loss, "beta_MAPE_pct": 100 * ape.mean(),
+                   "sigma": out["sigma"], "gamma": out["gamma"]}
+            for k in ("S", "E", "I", "R"):
+                if k in task:
+                    row[f"{k}_MAE_pct"] = 100 * np.mean(np.abs(out[k] - task[k])) / np.mean(task[k])
+            if n_train < len(task["t"]):
+                obs = task["I"][n_train:]
+                row["I_forecast_MAE_pct"] = 100 * np.mean(np.abs(out["I"][n_train:] - obs)) / np.mean(obs)
+            metrics.append(row)
+            print(f"loss {loss:.2e} | beta MAPE {row['beta_MAPE_pct']:.2f}% | sigma {out['sigma']:.3f} "
+                  f"gamma {out['gamma']:.3f}", flush=True)
 
-    plt.figure(figsize=(8, 5))
-    plt.plot(t_plot_unnorm, beta_pred.flatten(), color="#444444", linestyle='-', linewidth=2, label='β(t) estimated')
-    if "beta" in data.columns:
-        plt.scatter(t_data_unnorm, data["beta"].values.flatten(), color="#1f33b4", s=30, alpha=0.5, zorder=3, label='β(t) true')
-    elif beta_true is not None:
-        plt.scatter(t_data_unnorm, np.full_like(t_data_unnorm, beta_true), color="#1f33b4", s=30, alpha=0.5, zorder=3,
-                    label=f'β true = {beta_true}')
-    plt.xlabel('Days')
-    plt.ylabel('β(t)')
-    plt.ylim(0, 3)
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_parameter_est_beta_{label}_100_10.png'))
-    plt.close()
+            plt.figure(figsize=(14, 6))
+            plt.plot(t_days, out["I"] * N_VAL, color="#444444", label="Infected - PINN")
+            plt.scatter(t_days, task["I"] * N_VAL, color=COLOURS["I"], s=10, alpha=0.5, zorder=3, label="Infected - data")
+            if n_train < len(task["t"]):
+                plt.axvline(t_days[n_train - 1], color="gray", ls="--", label="Train/Test Split")
+            plt.xlabel("Days"); plt.ylabel("Number of infected individuals"); plt.legend(); plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, f"{prefix}_I_{tag}_{suffix}.png")); plt.close()
 
-    ### Susceptible
-    plt.figure(figsize=(14, 6))
-    plt.plot(t_data_unnorm, S_pred_unnorm, color="#444444", linewidth=2, linestyle='-', label='Susceptible (PINN)')
-    if "S" in data.columns:
-        plt.scatter(t_data_unnorm, data["S"].values.flatten() * N_val,
-                    color=COLOURS["S"], s=10, alpha=0.5, zorder=3, label='Susceptible (ground truth)')
-    plt.xlabel('Days')
-    plt.ylabel('Number of individuals')
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_S_comparison_{label}.png'))
-    plt.close()
+            plt.figure(figsize=(8, 5))
+            plt.plot(t_days, out["beta"], color="#444444",
+                     label="β(t) estimated" + (f" (σ={out['sigma']:.3f}, γ={out['gamma']:.3f})" if learn_sg else ""))
+            plt.scatter(t_days, task["beta"], color="#1f33b4", s=30, alpha=0.5, zorder=3, label="β(t) true")
+            plt.xlabel("Days"); plt.ylabel("β(t)"); plt.ylim(0, max(1.6, 1.3 * task["beta"].max()))
+            plt.legend(); plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, f"{prefix}_parameter_est_beta_{tag}_{suffix}.png")); plt.close()
 
-    ### Exposed
-    plt.figure(figsize=(14, 6))
-    plt.plot(t_data_unnorm, E_pred_unnorm, color="#444444", linewidth=2, linestyle='-', label='Exposed (PINN)')
-    if "E" in data.columns:
-        plt.scatter(t_data_unnorm, data["E"].values.flatten() * N_val,
-                    color=COLOURS["E"], s=10, alpha=0.5, zorder=3, label='Exposed (ground truth)')
-    plt.xlabel('Days')
-    plt.ylabel('Number of individuals')
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_E_comparison_{label}.png'))
-    plt.close()
+            fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+            for ax, k, name in zip(axes, ("S", "E", "R"), ("Susceptible", "Exposed", "Recovered")):
+                ax.plot(t_days, out[k] * N_VAL, color="#444444", label=f"{name} (PINN)")
+                if k in task:
+                    ax.scatter(t_days, task[k] * N_VAL, color=COLOURS[k], s=10, alpha=0.5, zorder=3,
+                               label=f"{name} (ground truth)")
+                ax.set_xlabel("Days"); ax.set_ylabel("Number of individuals"); ax.legend()
+            plt.tight_layout(); plt.savefig(os.path.join(output_dir, f"{prefix}_SER_{tag}_{suffix}.png")); plt.close()
 
-    ### Recovered
-    plt.figure(figsize=(14, 6))
-    plt.plot(t_data_unnorm, R_pred_unnorm, color="#444444", linewidth=2, linestyle='-', label='Recovered (PINN)')
-    if "R" in data.columns:
-        plt.scatter(t_data_unnorm, data["R"].values.flatten() * N_val,
-                    color=COLOURS["R"], s=10, alpha=0.5, zorder=3, label='Recovered (ground truth)')
-    plt.xlabel('Days')
-    plt.ylabel('Number of individuals')
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, f'PINN_R_comparison_{label}.png'))
-    plt.close()
+            pd.DataFrame({"t": task["t"], **{f"{k}_pred": out[k] for k in ("S", "E", "I", "R", "beta")}}).to_csv(
+                os.path.join(output_dir, f"{pred_prefix}_predictions_{tag}_{suffix}.csv"), index=False)
 
-    ### Error metrics
-    print("Error metrics:")
+    metrics_df = pd.DataFrame(metrics)
+    metrics_df.to_csv(os.path.join(output_dir, f"{prefix}_error_metrics_{suffix}.csv"), index=False)
+    print("\n" + metrics_df.round(3).to_string(index=False))
+    return metrics_df
 
-    I_true_unnorm = data["I"].values.flatten() * N_val
 
-    if "S" in data.columns:
-        S_true_unnorm = data["S"].values.flatten() * N_val
-        all_metrics.append(compute_metrics(S_pred_unnorm, S_true_unnorm, "Susceptible", label, "S"))
-
-    if "E" in data.columns:
-        E_true_unnorm = data["E"].values.flatten() * N_val
-        all_metrics.append(compute_metrics(E_pred_unnorm, E_true_unnorm, "Exposed",     label, "E"))
-
-    all_metrics.append(compute_metrics(I_pred_unnorm, I_true_unnorm, "Infected", label, "I"))
-
-    if "R" in data.columns:
-        R_true_unnorm = data["R"].values.flatten() * N_val
-        all_metrics.append(compute_metrics(R_pred_unnorm, R_true_unnorm, "Recovered",   label, "R"))
-    
-    ### Save to CSV file for panel plotting
-    pred_df = pd.DataFrame({
-        "t": to_numpy_flat(t_tensor),
-        "I_pred": to_numpy_flat(I_pred),
-        "S_pred": to_numpy_flat(S_pred),
-        "E_pred": to_numpy_flat(E_pred),
-        "R_pred": to_numpy_flat(R_pred),
-        "beta_pred": to_numpy_flat(beta_pred_full),
-    })
-    pred_df.to_csv(os.path.join(output_dir, f"PINN_predictions_{label}_100_10.csv"), index=False)
-
-### Save evaluation metrics to CSV
-metrics_df = pd.DataFrame(all_metrics)
-metrics_df.to_csv(os.path.join(output_dir, "PINN_error_metrics_100_10.csv"), index=False)
-print("\nMetrics saved to PINN_error_metrics_100_10  .csv")
-print(metrics_df.to_string(index=False))
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--scenarios", nargs="+", default=DEFAULT_SCENARIOS)
+    ap.add_argument("--split", type=float, default=1.0, help="fraction of days used for training")
+    ap.add_argument("--seeds", type=int, default=1)
+    ap.add_argument("--adam-steps", type=int, default=50_000)
+    ap.add_argument("--lbfgs", type=int, default=5000)
+    args = ap.parse_args()
+    run_scenarios(args.scenarios, args.split, args.seeds, args.adam_steps, args.lbfgs)

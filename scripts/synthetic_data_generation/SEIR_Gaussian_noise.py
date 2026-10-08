@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import os
+from scipy.integrate import solve_ivp
 
 ### Simulation parameters — fixed across all scripts 
 DAYS  = 100
@@ -45,25 +46,18 @@ os.makedirs(output_dir,  exist_ok=True)
 ### Compute R0
 R0_val = BETA / GAMMA
 
-### SEIR simulation 
-dt    = 1.0
-t_arr = np.arange(0, DAYS + dt, dt)
-S, E, I, R = S0, E0, I0, R0
-S_list, E_list, I_list, R_list = [S], [E], [I], [R]
+### SEIR simulation with solve_ivp (Runge-Kutta), as in the other synthetic scenarios
+### (a forward Euler step of 1 day peaks 5 days late and cannot be matched by the continuous SEIR model)
+def ode_model(t, y):
+    S, E, I, R = y
+    return [-BETA * S * I / N_VAL,
+            BETA * S * I / N_VAL - SIGMA * E,
+            SIGMA * E - GAMMA * I,
+            GAMMA * I]
 
-for _ in t_arr[1:]:
-    dS = -BETA * S * I / N_VAL * dt
-    dE = (BETA * S * I / N_VAL - SIGMA * E) * dt
-    dI = (SIGMA * E - GAMMA * I) * dt
-    dR = GAMMA * I * dt
-    S  += dS;  E += dE;  I += dI;  R += dR
-    S_list.append(S);  E_list.append(E)
-    I_list.append(I);  R_list.append(R)
-
-S_array = np.array(S_list)
-E_array = np.array(E_list)
-I_array = np.array(I_list)
-R_array = np.array(R_list)
+t_arr = np.linspace(0, DAYS, DAYS + 1)
+sol = solve_ivp(ode_model, (t_arr[0], t_arr[-1]), [S0, E0, I0, R0], t_eval=t_arr)
+S_array, E_array, I_array, R_array = sol.y
 
 ### Pre-generate noisy I for all levels (for reproducibility across plots)
 np.random.seed(42)

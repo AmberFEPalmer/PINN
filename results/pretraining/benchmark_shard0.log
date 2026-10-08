@@ -1,0 +1,31 @@
+30 held-out epidemics, 29 fits in shard 0/4
+[1/29] run    1 n=26 cold    | loss 3.65e-03 | beta MAPE 0.532 | Reff MAE 0.593 | p_h 0.1332 (true 0.0168) | 482s
+[2/29] run    2 n=52 cold    | loss 4.79e-03 | beta MAPE 0.180 | Reff MAE 0.165 | p_h 0.0282 (true 0.0505) | 991s
+[3/29] run    3 n=52 cold    | loss 2.83e-02 | beta MAPE 0.059 | Reff MAE 0.063 | p_h 0.8382 (true 0.0491) | 1381s
+[4/29] run    4 n=52 cold    | loss 2.62e-03 | beta MAPE 0.108 | Reff MAE 0.034 | p_h 0.0344 (true 0.0588) | 1655s
+[5/29] run    5 n=52 cold    | loss 3.21e-02 | beta MAPE 0.224 | Reff MAE 0.169 | p_h 0.9935 (true 0.0375) | 1952s
+[6/29] run    6 n=52 cold    | loss 3.68e-03 | beta MAPE 0.820 | Reff MAE 0.875 | p_h 0.0067 (true 0.0090) | 2248s
+[7/29] run    7 n=52 cold    | loss 6.02e-03 | beta MAPE 0.278 | Reff MAE 0.269 | p_h 0.0129 (true 0.0185) | 2528s
+[8/29] run    8 n=52 cold    | loss 3.93e-04 | beta MAPE 0.127 | Reff MAE 0.150 | p_h 0.0326 (true 0.0479) | 2788s
+[9/29] run    9 n=52 cold    | loss 1.58e-02 | beta MAPE 1.188 | Reff MAE 0.484 | p_h 0.0178 (true 0.0103) | 3046s
+[10/29] run   11 n=26 cold    | loss 3.74e-02 | beta MAPE 0.384 | Reff MAE 0.460 | p_h 0.9916 (true 0.0103) | 3304s
+[11/29] run   12 n=26 cold    | loss 1.61e-02 | beta MAPE 0.021 | Reff MAE 0.020 | p_h 0.9803 (true 0.0660) | 3566s
+[12/29] run   13 n=26 cold    | loss 7.83e-04 | beta MAPE 0.154 | Reff MAE 0.136 | p_h 0.0126 (true 0.0239) | 3831s
+[13/29] run   14 n=26 cold    | loss 1.19e-03 | beta MAPE 0.040 | Reff MAE 0.046 | p_h 0.0253 (true 0.0789) | 4098s
+[14/29] run   15 n=26 cold    | loss 1.65e-02 | beta MAPE 0.075 | Reff MAE 0.081 | p_h 0.8218 (true 0.0613) | 4364s
+[15/29] run   16 n=26 cold    | loss 1.52e-01 | beta MAPE 0.237 | Reff MAE 0.198 | p_h 0.0531 (true 0.0722) | 4621s
+[16/29] run   17 n=26 cold    | loss 1.11e-01 | beta MAPE 0.058 | Reff MAE 0.060 | p_h 0.5769 (true 0.0547) | 4876s
+[17/29] run   18 n=26 cold    | loss 8.87e-04 | beta MAPE 0.076 | Reff MAE 0.082 | p_h 0.0385 (true 0.0499) | 5134s
+[18/29] run   19 n=26 cold    | loss 2.05e-01 | beta MAPE 0.217 | Reff MAE 0.181 | p_h 0.9693 (true 0.0063) | 5390s
+[19/29] run   20 n=26 cold    | loss 7.96e-03 | beta MAPE 0.039 | Reff MAE 0.045 | p_h 0.1063 (true 0.0776) | 5645s
+[20/29] run   21 n=26 cold    | loss 1.08e-01 | beta MAPE 0.065 | Reff MAE 0.066 | p_h 0.0587 (true 0.0753) | 5901s
+[21/29] run   22 n=26 cold    | loss 6.18e-04 | beta MAPE 0.083 | Reff MAE 0.110 | p_h 0.0435 (true 0.0759) | 6160s
+[22/29] run   23 n=26 cold    | loss 5.17e-03 | beta MAPE 0.051 | Reff MAE 0.062 | p_h 0.0079 (true 0.0075) | 6416s
+[23/29] run   24 n=26 cold    | loss 8.21e-03 | beta MAPE 0.075 | Reff MAE 0.091 | p_h 0.9983 (true 0.0151) | 6678s
+[24/29] run   25 n=26 cold    | loss 2.57e-02 | beta MAPE 0.093 | Reff MAE 0.101 | p_h 0.9775 (true 0.0599) | 6967s
+[25/29] run   26 n=26 cold    | loss 3.86e-04 | beta MAPE 0.080 | Reff MAE 0.112 | p_h 0.0235 (true 0.0381) | 7223s
+[26/29] run   27 n=26 cold    | loss 3.87e-02 | beta MAPE 0.080 | Reff MAE 0.082 | p_h 0.9778 (true 0.0738) | 7479s
+[27/29] run   28 n=26 cold    | loss 2.54e-03 | beta MAPE 0.241 | Reff MAE 0.309 | p_h 0.0408 (true 0.0168) | 7735s
+[28/29] run   29 n=26 cold    | loss 4.42e-03 | beta MAPE 0.092 | Reff MAE 0.101 | p_h 0.9995 (true 0.0714) | 7989s
+[29/29] run   30 n=26 cold    | loss 2.74e-02 | beta MAPE 0.458 | Reff MAE 0.525 | p_h 0.3992 (true 0.0353) | 8224s
+saved 116 rows to ../../results/pretraining/benchmark_shard0.pkl

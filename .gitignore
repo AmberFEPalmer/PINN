@@ -34,3 +34,10 @@ echo "*.png" >> .gitignore
 echo "*.jpg" >> .gitignore
 .RData
 .python-version
+# Reservoir pretraining: synthetic data, trained weights and benchmark outputs (regenerable)
+data/reservoir/
+models/
+results/**/*.pkl
+
+# backup of removed PINN variant code
+archive/

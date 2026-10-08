@@ -1,0 +1,12 @@
+43 tasks, 10 fits in shard 0/1
+[1/10] beta_spline                  forecast    reptile s0 | loss 5.17e-06 | beta MAPE 0.719 | I test MAE% 7.98 | 256s
+[2/10] beta_spline_slow_rise        forecast    reptile s0 | loss 1.16e-06 | beta MAPE 0.045 | I test MAE% 5.03 | 527s
+[3/10] beta_spline_gradual_decline  forecast    reptile s0 | loss 4.17e-06 | beta MAPE 0.095 | I test MAE% 26.63 | 855s
+[4/10] beta_spline_single_pulse     forecast    reptile s0 | loss 1.90e-06 | beta MAPE 0.045 | I test MAE% 6.99 | 1189s
+[5/10] beta_spline_two_waves        forecast    reptile s0 | loss 2.49e-06 | beta MAPE 0.072 | I test MAE% 38.58 | 1534s
+[6/10] beta_spline_three_waves      forecast    reptile s0 | loss 1.27e-06 | beta MAPE 0.055 | I test MAE% 21.63 | 1881s
+[7/10] beta_spline_rapid            forecast    reptile s0 | loss 8.41e-07 | beta MAPE 0.092 | I test MAE% 33.75 | 2183s
+[8/10] beta_spline_very_rapid       forecast    reptile s0 | loss 2.85e-06 | beta MAPE 0.101 | I test MAE% 25.35 | 2499s
+[9/10] beta_spline_escalating       forecast    reptile s0 | loss 5.89e-07 | beta MAPE 0.080 | I test MAE% 44.44 | 3073s
+[10/10] beta_spline_damped           forecast    reptile s0 | loss 5.35e-06 | beta MAPE 0.053 | I test MAE% 4.88 | 11946s
+saved 50 rows to ../../../results/pretraining/synthetic/combined/reptile_forecast.pkl

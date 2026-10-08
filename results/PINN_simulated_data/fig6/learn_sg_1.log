@@ -1,0 +1,6 @@
+43 tasks, 4 fits in shard 1/2
+[1/4] beta_0.75                    reconstruct cold    s1 | loss 5.42e-05 | beta MAPE 0.543 | sigma 0.306 gamma 0.155 |  | 328s
+[2/4] beta_0.5                     reconstruct cold    s0 | loss 1.07e-06 | beta MAPE 0.097 | sigma 0.291 gamma 0.232 |  | 667s
+[3/4] beta_0.5                     reconstruct cold    s2 | loss 9.16e-06 | beta MAPE 0.172 | sigma 0.245 gamma 0.194 |  | 1011s
+[4/4] beta_0.4                     reconstruct cold    s1 | loss 3.66e-06 | beta MAPE 0.177 | sigma 0.319 gamma 0.209 |  | 1355s
+saved 20 rows to ../../../results/pretraining/synthetic/fig6/learn_sg_1.pkl

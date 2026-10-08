@@ -1,0 +1,22 @@
+39 tasks, 20 fits in shard 0/2
+[1/20] beta_spline                  reconstruct cold    s0 | loss 2.02e-05 | beta MAPE 0.026 |  | 3897s
+[2/20] beta_spline                  reconstruct cold    s2 | loss 2.39e-06 | beta MAPE 0.030 |  | 5104s
+[3/20] beta_spline_slow_rise        reconstruct cold    s1 | loss 1.92e-06 | beta MAPE 0.012 |  | 6017s
+[4/20] beta_spline_gradual_decline  reconstruct cold    s0 | loss 1.23e-06 | beta MAPE 0.006 |  | 6271s
+[5/20] beta_spline_gradual_decline  reconstruct cold    s2 | loss 1.26e-06 | beta MAPE 0.006 |  | 6528s
+[6/20] beta_spline_single_pulse     reconstruct cold    s1 | loss 2.77e-06 | beta MAPE 0.016 |  | 6780s
+[7/20] beta_spline_two_waves        reconstruct cold    s0 | loss 8.72e-06 | beta MAPE 0.026 |  | 7043s
+[8/20] beta_spline_two_waves        reconstruct cold    s2 | loss 7.27e-06 | beta MAPE 0.025 |  | 7294s
+[9/20] beta_spline_three_waves      reconstruct cold    s1 | loss 3.66e-06 | beta MAPE 0.027 |  | 7544s
+[10/20] beta_spline_rapid            reconstruct cold    s0 | loss 9.57e-06 | beta MAPE 0.038 |  | 7737s
+[11/20] beta_spline_rapid            reconstruct cold    s2 | loss 1.21e-05 | beta MAPE 0.036 |  | 7935s
+[12/20] beta_spline_very_rapid       reconstruct cold    s1 | loss 1.56e-05 | beta MAPE 0.064 |  | 8129s
+[13/20] beta_spline_escalating       reconstruct cold    s0 | loss 2.90e-06 | beta MAPE 0.010 |  | 8322s
+[14/20] beta_spline_escalating       reconstruct cold    s2 | loss 2.97e-06 | beta MAPE 0.011 |  | 8516s
+[15/20] beta_spline_damped           reconstruct cold    s1 | loss 2.17e-06 | beta MAPE 0.023 |  | 8717s
+[16/20] beta_0.75                    reconstruct cold    s0 | loss 4.13e-06 | beta MAPE 0.010 |  | 8915s
+[17/20] beta_0.75                    reconstruct cold    s2 | loss 3.61e-06 | beta MAPE 0.004 |  | 9112s
+[18/20] beta_0.5                     reconstruct cold    s1 | loss 1.01e-06 | beta MAPE 0.001 |  | 9306s
+[19/20] beta_0.4                     reconstruct cold    s0 | loss 3.29e-06 | beta MAPE 0.001 |  | 9497s
+[20/20] beta_0.4                     reconstruct cold    s2 | loss 5.17e-07 | beta MAPE 0.001 |  | 9675s
+saved 100 rows to ../../../results/pretraining/synthetic/cleanup/hard_shard0.pkl

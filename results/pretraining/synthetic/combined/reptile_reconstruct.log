@@ -1,0 +1,15 @@
+43 tasks, 13 fits in shard 0/1
+[1/13] beta_spline                  reconstruct reptile s0 | loss 1.65e-06 | beta MAPE 0.029 |  | 262s
+[2/13] beta_spline_slow_rise        reconstruct reptile s0 | loss 3.74e-07 | beta MAPE 0.010 |  | 545s
+[3/13] beta_spline_gradual_decline  reconstruct reptile s0 | loss 1.09e-06 | beta MAPE 0.008 |  | 879s
+[4/13] beta_spline_single_pulse     reconstruct reptile s0 | loss 2.48e-06 | beta MAPE 0.014 |  | 1215s
+[5/13] beta_spline_two_waves        reconstruct reptile s0 | loss 1.67e-06 | beta MAPE 0.025 |  | 1563s
+[6/13] beta_spline_three_waves      reconstruct reptile s0 | loss 4.63e-06 | beta MAPE 0.029 |  | 1906s
+[7/13] beta_spline_rapid            reconstruct reptile s0 | loss 1.77e-06 | beta MAPE 0.036 |  | 2205s
+[8/13] beta_spline_very_rapid       reconstruct reptile s0 | loss 4.27e-06 | beta MAPE 0.055 |  | 2527s
+[9/13] beta_spline_escalating       reconstruct reptile s0 | loss 3.54e-06 | beta MAPE 0.012 |  | 3335s
+[10/13] beta_spline_damped           reconstruct reptile s0 | loss 1.37e-06 | beta MAPE 0.025 |  | 12014s
+[11/13] beta_0.75                    reconstruct reptile s0 | loss 7.72e-06 | beta MAPE 0.013 |  | 12611s
+[12/13] beta_0.5                     reconstruct reptile s0 | loss 5.30e-06 | beta MAPE 0.004 |  | 13034s
+[13/13] beta_0.4                     reconstruct reptile s0 | loss 1.98e-06 | beta MAPE 0.004 |  | 13405s
+saved 65 rows to ../../../results/pretraining/synthetic/combined/reptile_reconstruct.pkl

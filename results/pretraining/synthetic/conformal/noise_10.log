@@ -1,0 +1,22 @@
+
+=== noise_10 ===
+  origin day  20 | loss 2.54e-03 | 448s
+  origin day  30 | loss 2.55e-03 | 863s
+  origin day  40 | loss 3.34e-03 | 1284s
+  origin day  50 | loss 3.35e-03 | 1680s
+  origin day  60 | loss 3.55e-03 | 2468s
+  origin day  70 | loss 4.63e-03 | 3269s
+  origin day  80 | loss 4.90e-03 | 4184s
+  origin day  90 | loss 5.33e-03 | 4887s
+bounds: 1071 asymmetric, 124 symmetric, 44 unguaranteed (3.6%)
+ horizon  n  mae_pct  coverage_50  rel_width_50  coverage_90  rel_width_90  coverage_95  rel_width_95  wis_rel
+       1 65   10.560        0.615         0.195        0.923         0.589        0.969         0.873    0.065
+       2 63   11.405        0.540         0.221        0.952         0.873        1.000         1.043    0.082
+       3 61   13.760        0.492         0.398        0.918         1.008        0.967         1.412    0.102
+       4 59   16.562        0.441         0.351        0.915         1.368        0.949         1.739    0.127
+       5 57   18.475        0.456         0.545        0.860         1.625        0.895         2.135    0.159
+       6 55   21.180        0.382         0.659        0.782         1.809        0.891         2.149    0.185
+       7 53   24.720        0.377         0.831        0.774         2.238        0.906         3.351    0.229
+Traceback (most recent call last):
+  File "/Users/oc25003/Desktop/Implement_PINN/scripts/pretraining/synthetic/conformal_seir.py", line 166, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: '../../../results/pretraining/synthetic/conformal/noise_10.pkl'

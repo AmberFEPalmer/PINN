@@ -1,0 +1,37 @@
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:104: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:179: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:259: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:325: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:384: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:455: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:527: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:579: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:623: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:686: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:747: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:806: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/Users/oc25003/Desktop/Implement_PINN/scripts/PINN_files/panel_figures.py:860: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+Panel saved.
+Panel 1 saved: all parameters learned beta estimation (100/0).
+Panel 2 saved: sigma/gamma fixed beta estimation (100/10).
+Panel saved: time-varying beta PINN forecasting (80/20).
+Panel saved: all-learnable PINN time-varying beta forecasting (80/20).
+Panel 1 saved: all-learnable beta reconstruction (100/0).
+Panel 2 saved: fixed-params beta reconstruction (100/10).
+Panel 1 saved: fixed params Gaussian noise forecasting (80/20).
+Panel 2 saved: all-learnable Gaussian noise forecasting (80/20).
+Panel 1 saved: fixed params beta reconstruction Gaussian noise (100/10).
+Panel 2 saved: all-learnable beta reconstruction Gaussian noise (100/0).

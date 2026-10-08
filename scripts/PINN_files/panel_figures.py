@@ -389,7 +389,7 @@ scenarios = [
     {"label": "beta_spline_slow_rise",       "csv": "beta_spline_slow_rise.csv"},
     {"label": "beta_spline_gradual_decline",  "csv": "beta_spline_gradual_decline.csv"},
     ### Medium
-    {"label": "beta_spline_three_waves",        "csv": "beta_spline_two_waves.csv"},
+    {"label": "beta_spline_three_waves",        "csv": "beta_spline_three_waves.csv"},
     ### Hard
     {"label": "beta_spline_escalating",       "csv": "beta_spline_escalating.csv"},
     {"label": "beta_spline_rapid",            "csv": "beta_spline_rapid.csv"},
@@ -461,7 +461,7 @@ scenarios = [
     {"label": "beta_spline_slow_rise",       "csv": "beta_spline_slow_rise.csv"},
     {"label": "beta_spline_gradual_decline",  "csv": "beta_spline_gradual_decline.csv"},
     ### Medium
-    {"label": "beta_spline_three_waves",      "csv": "beta_spline_two_waves.csv"},
+    {"label": "beta_spline_three_waves",      "csv": "beta_spline_three_waves.csv"},
     ### Hard
     {"label": "beta_spline_escalating",       "csv": "beta_spline_escalating.csv"},
     {"label": "beta_spline_rapid",            "csv": "beta_spline_rapid.csv"},
@@ -530,7 +530,7 @@ print("Panel saved: all-learnable PINN time-varying beta forecasting (80/20).")
 scenarios = [
     {"label": "beta_spline_slow_rise", "csv": "beta_spline_slow_rise.csv"},
     {"label": "beta_spline_gradual_decline",  "csv": "beta_spline_gradual_decline.csv"},
-    {"label": "beta_spline_three_waves", "csv": "beta_spline_two_waves.csv"},
+    {"label": "beta_spline_three_waves", "csv": "beta_spline_three_waves.csv"},
     {"label": "beta_spline_escalating", "csv": "beta_spline_escalating.csv"},
     {"label": "beta_spline_rapid", "csv": "beta_spline_rapid.csv"},
 ]

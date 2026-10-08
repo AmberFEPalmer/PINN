@@ -1,0 +1,31 @@
+30 held-out epidemics, 29 fits in shard 1/4
+[1/29] run    1 n=26 reptile | loss 2.08e-05 | beta MAPE 0.164 | Reff MAE 0.197 | p_h 0.0108 (true 0.0168) | 479s
+[2/29] run    2 n=52 reptile | loss 2.98e-05 | beta MAPE 0.101 | Reff MAE 0.082 | p_h 0.0231 (true 0.0505) | 986s
+[3/29] run    3 n=52 reptile | loss 3.15e-04 | beta MAPE 0.094 | Reff MAE 0.099 | p_h 0.0452 (true 0.0491) | 1376s
+[4/29] run    4 n=52 reptile | loss 9.43e-05 | beta MAPE 0.133 | Reff MAE 0.064 | p_h 0.0334 (true 0.0588) | 1649s
+[5/29] run    5 n=52 reptile | loss 8.52e-05 | beta MAPE 0.155 | Reff MAE 0.124 | p_h 0.0341 (true 0.0375) | 1945s
+[6/29] run    6 n=52 reptile | loss 3.46e-05 | beta MAPE 0.143 | Reff MAE 0.103 | p_h 0.0058 (true 0.0090) | 2241s
+[7/29] run    7 n=52 reptile | loss 4.04e-05 | beta MAPE 0.144 | Reff MAE 0.110 | p_h 0.0072 (true 0.0185) | 2521s
+[8/29] run    8 n=52 reptile | loss 1.87e-05 | beta MAPE 0.154 | Reff MAE 0.099 | p_h 0.0320 (true 0.0479) | 2780s
+[9/29] run    9 n=52 reptile | loss 5.73e-04 | beta MAPE 0.596 | Reff MAE 0.295 | p_h 0.0128 (true 0.0103) | 3038s
+[10/29] run   11 n=26 reptile | loss 1.86e-05 | beta MAPE 0.042 | Reff MAE 0.047 | p_h 0.0124 (true 0.0103) | 3295s
+[11/29] run   12 n=26 reptile | loss 3.51e-05 | beta MAPE 0.060 | Reff MAE 0.062 | p_h 0.0386 (true 0.0660) | 3557s
+[12/29] run   13 n=26 reptile | loss 2.41e-05 | beta MAPE 0.118 | Reff MAE 0.059 | p_h 0.0110 (true 0.0239) | 3821s
+[13/29] run   14 n=26 reptile | loss 3.00e-05 | beta MAPE 0.115 | Reff MAE 0.131 | p_h 0.0290 (true 0.0789) | 4086s
+[14/29] run   15 n=26 reptile | loss 6.09e-06 | beta MAPE 0.067 | Reff MAE 0.074 | p_h 0.0946 (true 0.0613) | 4352s
+[15/29] run   16 n=26 reptile | loss 4.15e-06 | beta MAPE 0.222 | Reff MAE 0.194 | p_h 0.0837 (true 0.0722) | 4609s
+[16/29] run   17 n=26 reptile | loss 6.77e-06 | beta MAPE 0.038 | Reff MAE 0.040 | p_h 0.3325 (true 0.0547) | 4864s
+[17/29] run   18 n=26 reptile | loss 7.57e-05 | beta MAPE 0.095 | Reff MAE 0.098 | p_h 0.0373 (true 0.0499) | 5121s
+[18/29] run   19 n=26 reptile | loss 1.25e-04 | beta MAPE 0.210 | Reff MAE 0.202 | p_h 0.0519 (true 0.0063) | 5376s
+[19/29] run   20 n=26 reptile | loss 8.74e-05 | beta MAPE 0.046 | Reff MAE 0.053 | p_h 0.0368 (true 0.0776) | 5630s
+[20/29] run   21 n=26 reptile | loss 1.28e-05 | beta MAPE 0.066 | Reff MAE 0.066 | p_h 0.4296 (true 0.0753) | 5886s
+[21/29] run   22 n=26 reptile | loss 1.31e-05 | beta MAPE 0.067 | Reff MAE 0.084 | p_h 0.0372 (true 0.0759) | 6145s
+[22/29] run   23 n=26 reptile | loss 2.38e-05 | beta MAPE 0.119 | Reff MAE 0.176 | p_h 0.0046 (true 0.0075) | 6400s
+[23/29] run   24 n=26 reptile | loss 3.95e-05 | beta MAPE 0.089 | Reff MAE 0.120 | p_h 0.0091 (true 0.0151) | 6660s
+[24/29] run   25 n=26 reptile | loss 1.21e-04 | beta MAPE 0.085 | Reff MAE 0.086 | p_h 0.0858 (true 0.0599) | 6923s
+[25/29] run   26 n=26 reptile | loss 4.30e-05 | beta MAPE 0.086 | Reff MAE 0.104 | p_h 0.0205 (true 0.0381) | 7178s
+[26/29] run   27 n=26 reptile | loss 1.36e-05 | beta MAPE 0.160 | Reff MAE 0.165 | p_h 0.1831 (true 0.0738) | 7433s
+[27/29] run   28 n=26 reptile | loss 2.96e-05 | beta MAPE 0.066 | Reff MAE 0.072 | p_h 0.0075 (true 0.0168) | 7690s
+[28/29] run   29 n=26 reptile | loss 5.01e-05 | beta MAPE 0.060 | Reff MAE 0.038 | p_h 0.0293 (true 0.0714) | 7943s
+[29/29] run   30 n=26 reptile | loss 6.45e-06 | beta MAPE 0.102 | Reff MAE 0.110 | p_h 0.0340 (true 0.0353) | 8193s
+saved 116 rows to ../../results/pretraining/benchmark_shard1.pkl

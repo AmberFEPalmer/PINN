@@ -3,11 +3,16 @@ Python - Version 3.10.19
 Tensorflow - Version 2.15.0
 
 PINN files
-1. PINN_simulated_data.py = PINN tested on simulated SIR models, beta learnt by the model, recovery rate and incubation parameters provided
-2. PINN_all_learnable_parameters.py = PINN tested on simulated SIR models, beta, recovery rate and incubation parameters learnt by the model
+1. PINN_simulated_data.py = PINN tested on simulated SEIR models, beta(t) learnt by the model, recovery rate and incubation parameters provided. Log-scale data loss, relative ODE residual, initial conditions and conservation built into the outputs, Adam then L-BFGS. Also the PINN used by the scripts below
+2. PINN_all_learnable_parameters.py = PINN tested on simulated SEIR models, beta, recovery rate and incubation parameters learnt by the model (recovery rate and incubation as constants; --beta-const for constant beta)
 3. PINN_SEIR.py = PINN on real world COVID-19 data
 4. PINN_hospitalisations_deaths.py = PINN on real world COVID-19 cases, hospitalisations and deaths data
 5. PINN_metapopulation = PINN on metapopulation SIR model with 5 patches
+6. synthetic_scenarios.py = loads and generates the synthetic SEIR scenarios used by the PINN scripts (constant, spline, noise, out-of-distribution)
+7. benchmark_PINN_simulated_data.py = fits the synthetic PINN to many scenarios and seeds and scores beta, sigma, gamma and forecasts
+8. conformal_PINN_simulated_data.py = rolling-origin conformal prediction intervals for the synthetic PINN's forecasts
+9. conformal_PINN.py = conformal prediction intervals for the real-data PINN's forecasts
+10. fig6_all_learnable.py, fig10_beta_reconstruction.py, noise_beta_reconstruction.py = figures from benchmark_PINN_simulated_data.py results
 
 Data files
 1. Data_processing.py = processing UKHSA COVID-19 case data
