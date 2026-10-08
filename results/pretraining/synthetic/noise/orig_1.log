@@ -1,3 +1,0 @@
-43 tasks, 6 fits in shard 1/2
-[1/6] noise_5                      reconstruct cold    s1 | loss 5.48e-04 | beta MAPE 0.045 |  | 252s
-[2/6] noise_10                     reconstruct cold    s0 | loss 1.40e-03 | beta MAPE 0.094 |  | 529s
