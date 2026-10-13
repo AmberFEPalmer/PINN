@@ -517,5 +517,8 @@ plt.show()
 ### Save
 import os, pickle
 os.makedirs("../../forecasts", exist_ok=True)
+### beta(t) over the whole study grid from the last window's fit (trained on all but the final forecast horizon)
+beta_final = np.clip(model(tf.convert_to_tensor(t_data_norm, dtype=tf.float32))[-1].numpy().ravel(), 0.0, None)
 with open("../../forecasts/PINN.pkl", "wb") as f:
-    pickle.dump({"all_pred": all_pred, "all_obs": all_obs, "all_naive": all_naive}, f)
+    pickle.dump({"all_pred": all_pred, "all_obs": all_obs, "all_naive": all_naive, "all_beta": all_beta,
+                 "beta_final": beta_final, "final_train_end": train_end, "gamma": GAMMA}, f)

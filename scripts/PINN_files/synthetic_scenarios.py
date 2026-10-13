@@ -110,6 +110,40 @@ def ood_task(name, data_folder="../../data"):
     return task
 
 
+### Forecastable time-varying scenarios: future beta is predictable from the past. Rule fixed before any
+### fitting: after the forecast origin (day 80) beta either stays at the level it has held for >= 20 days
+### (settled_*: all change is over by day 60), or continues the one smooth monotone trend it follows over
+### the whole 100 days (trend_*). Data checks only (no PINN involved): peak >= 20 infected, and I(day 80)
+### >= 5% of the peak so the forecast window has signal.
+def _logistic(t, start, end, centre, width):
+    return start + (end - start) / (1 + np.exp(-(t - centre) / width))
+
+
+def _forecastable_beta(name):
+    t = t_grid
+    if name == "settled_early_decline":
+        return _logistic(t, 0.8, 0.4, 30, 4)                ### early intervention, flat from ~day 50
+    if name == "settled_early_rise":
+        return _logistic(t, 0.35, 0.6, 35, 4)               ### early relaxation, flat from ~day 55
+    if name == "settled_intervention":
+        return _logistic(t, 0.75, 0.45, 45, 1.5)            ### sharp-ish drop at day 45, flat from ~day 52
+    if name == "trend_linear_decline":
+        return 0.7 - 0.004 * t                              ### 0.7 -> 0.3, same slope throughout
+    if name == "trend_exp_decay":
+        return 0.3 + 0.45 * np.exp(-t / 50)                 ### 0.75 -> 0.36, same decay throughout
+    raise KeyError(name)
+
+
+FORECASTABLE = ["settled_early_decline", "settled_early_rise", "settled_intervention",
+                "trend_linear_decline", "trend_exp_decay"]
+
+
+def forecastable_task(name):
+    task = simulate(_forecastable_beta(name))
+    task["label"] = name
+    return task
+
+
 ### The report's constant-beta scenarios (Sec 3.1/3.3, Figs 5-6): data/SEIR_data_beta_{b}.csv,
 ### same ODE, I0 = 1, N = 100001 (verified identical to simulate() here)
 CONSTANT = ["beta_0.75", "beta_0.5", "beta_0.4"]
@@ -158,9 +192,12 @@ def noise_task(label, euler=False):
 
 
 def load_task(name, data_folder="../../data"):
-    """Any named scenario: spline (beta_spline*), constant (beta_0.75 etc.), OOD (ood_*), noise (noise_*)."""
+    """Any named scenario: spline (beta_spline*), constant (beta_0.75 etc.), OOD (ood_*), noise (noise_*),
+    forecastable (settled_*, trend_*)."""
     if name.startswith("noise_"):
         return noise_task(name)
+    if name in FORECASTABLE:
+        return forecastable_task(name)
     if name.startswith("ood_"):
         return ood_task(name, data_folder)
     if name in CONSTANT:
