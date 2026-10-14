@@ -1,22 +1,28 @@
-# SEIR physics informed neural network
-Python - Version 3.10.19
-Tensorflow - Version 2.15.0
+# SEIR physics-informed neural network
+Python 3.10, TensorFlow 2.15 (`pip install -r requirements.txt`). Run scripts from their own folder.
 
-PINN files
-1. PINN_simulated_data.py = PINN tested on simulated SEIR models, beta(t) learnt by the model, recovery rate and incubation parameters provided. Log-scale data loss, relative ODE residual, initial conditions and conservation built into the outputs, Adam then L-BFGS. Also the PINN used by the scripts below
-2. PINN_all_learnable_parameters.py = PINN tested on simulated SEIR models, beta, recovery rate and incubation parameters learnt by the model (recovery rate and incubation as constants; --beta-const for constant beta)
-3. PINN_SEIR.py = PINN on real world COVID-19 data
-4. PINN_hospitalisations_deaths.py = PINN on real world COVID-19 cases, hospitalisations and deaths data
-5. PINN_metapopulation = PINN on metapopulation SIR model with 5 patches
-6. synthetic_scenarios.py = loads and generates the synthetic SEIR scenarios used by the PINN scripts (constant, spline, noise, out-of-distribution)
-7. benchmark_PINN_simulated_data.py = fits the synthetic PINN to many scenarios and seeds and scores beta, sigma, gamma and forecasts
-8. conformal_PINN_simulated_data.py = rolling-origin conformal prediction intervals for the synthetic PINN's forecasts
-9. conformal_PINN.py = conformal prediction intervals for the real-data PINN's forecasts
-10. fig6_all_learnable.py, fig10_beta_reconstruction.py, noise_beta_reconstruction.py = figures from benchmark_PINN_simulated_data.py results
+## Data
+- `scripts/real_data_processing/data_processing.py` - UKHSA COVID-19 cases -> `data/*_data_study.npy`
+- `scripts/real_data_processing/deaths_hospitalisations.py` - UKHSA hospitalisations and deaths
+- `scripts/synthetic_data_generation/SEIR_model.py` - constant-beta SEIR data (and the report's SEIR panel)
+- `scripts/synthetic_data_generation/SEIR_Gaussian_noise.py` - noise scenarios (and the report's noise panel)
+- `scripts/synthetic_data_generation/metapopulation_SEIR.py` - 5-patch metapopulation data
 
-Data files
-1. Data_processing.py = processing UKHSA COVID-19 case data
-2. deaths_hospitalisations.py = processing UKHSA COVID-19 hospitalisations and deaths
-3. SEIR_model.py = developing SEIR model to generate synthetic data
-4. PINN_transmission_changing.py = developing SEIR models with beta changing as a spline
-5. SEIR_Gaussian_noise.py = gaussian noise added to infected compartment of SEIR model
+## Synthetic-data PINN (`scripts/PINN_files`)
+- `PINN_simulated_data.py` - PINN with sigma and gamma provided; also the PINN used by every script below
+- `PINN_all_learnable_parameters.py` - beta, sigma and gamma learnt from I(t) only
+- `synthetic_scenarios.py` - all synthetic scenarios (constant, spline, noise, forecastable)
+- `run_rolling.py` - rolling-origin fits for the conformal intervals
+- `forecast_origins.py`, `forecast_origins_figures.py` - forecast skill by origin and horizon
+- `conformal_synthetic.py`, `conformal_rolling.py`, `conformal_rolling_figures.py` - causal conformal intervals
+- `panel_figures.py`, `synthetic_data_figures.py`, `R_recovery.py` - report figures and tables
+- `collect_report_figures.py` - copies every report figure into `report_figures_final/`
+
+## Real-data PINN
+- `PINN_hospitalisations_deaths.py` - SEIR-PINN on England cases, hospitalisations and deaths -> `forecasts/PINN.pkl`
+- `conformal_PINN.py` - conformal intervals for its forecasts
+- `scripts/baseline_models/` - LSTM, Transformer and Prophet baselines -> `forecasts/preds_*.pkl`
+- `compare_forecasts.py`, `real_data_figures.py` - model comparison and real-data report figures
+
+## Metapopulation
+- `PINN_metapopulation.py` - PINN on the 5-patch metapopulation SEIR model

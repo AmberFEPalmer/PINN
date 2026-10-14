@@ -44,3 +44,8 @@ archive/
 
 # run logs
 *.log
+
+# model outputs (regenerable) and the report (lives on Overleaf)
+forecasts/
+main.tex
+references.bib
